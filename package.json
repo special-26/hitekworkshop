@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@nuxt/icon": "^2.5.1",
+    "@nuxtjs/color-mode": "^4.0.1",
     "@qirolab/nuxt-sanctum-authentication": "^0.1.15",
     "@tailwindcss/vite": "^4.3.3",
     "nuxt": "^4.5.2",

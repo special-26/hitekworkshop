@@ -1,4 +1,5 @@
 <script setup lang="ts">
+const colorMode = useColorMode()
 const user = useCurrentUser();
 const { hasPermission } = usePermissions()
 
@@ -23,13 +24,13 @@ const navigation = [
   },
   {
     label: 'Customers',
-    to: '/',
+    to: '/customers',
     icon: 'i-lucide-users',
     permission: 'customers.view'
   },
   {
     label: 'Vehicles',
-    to: '/',
+    to: '/vehicles',
     icon: 'i-lucide-car',
     permission: 'vehicles.view'
   },
@@ -92,22 +93,22 @@ const logout = async () => {
 
     <!-- Sidebar -->
     <aside
-      class="fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r border-gray-200 bg-white transition-transform dark:border-gray-800 dark:bg-gray-950 lg:translate-x-0"
+      class="fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r border-gray-300 bg-white transition-transform lg:translate-x-0"
       :class="isSidebarOpen ? 'translate-x-0' : '-translate-x-full'"
     >
 
       <!-- Logo -->
-      <div class="flex h-16 items-center border-b border-gray-200 px-6 dark:border-gray-800">
+      <div class="flex h-16 items-center border-b border-gray-300 px-6">
         <NuxtLink
           to="/dashboard"
-          class="text-xl font-bold text-gray-900 dark:text-white"
+          class="text-xl font-bold text-gray-900"
         >
           HITEK
         </NuxtLink>
       </div>
 
       <!-- Navigation -->
-      <nav class="flex-1 overflow-y-auto p-4">
+      <nav class="flex-1 overflow-y-auto p-4 text-gray-900">
 
         <div class="space-y-1">
 
@@ -115,8 +116,8 @@ const logout = async () => {
             v-for="item in visibleNavigation"
             :key="item.to"
             :to="item.to"
-            class="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-gray-700 transition hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
-            active-class="bg-gray-100 text-gray-900 dark:bg-gray-800 dark:text-white"
+            class="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-gray-700 transition hover:bg-gray-300"
+            active-class="bg-gray-300 text-gray-900 font-bold"
             @click="isSidebarOpen = false"
           >
             <Icon
@@ -133,11 +134,13 @@ const logout = async () => {
 
       </nav>
 
+
       <!-- User section -->
-      <div class="border-t border-gray-200 p-4 dark:border-gray-800">
+      <div class="border-t border-gray-300 p-4">
+
 
         <div class="mb-3 px-2">
-          <p class="truncate text-sm font-medium text-gray-900 dark:text-white">
+          <p class="truncate text-sm font-medium text-gray-900">
             {{ user?.data?.user?.name }}
           </p>
 
@@ -147,7 +150,7 @@ const logout = async () => {
         </div>
 
         <button
-          class="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-red-600 transition hover:bg-red-50 dark:hover:bg-red-950"
+          class="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-red-600 transition hover:bg-red-50 bg-red-100 border border-red-300"
           @click="logout"
         >
           <Icon
@@ -167,7 +170,7 @@ const logout = async () => {
 
       <!-- Header -->
       <header
-        class="sticky top-0 z-30 flex h-16 items-center border-b border-gray-200 bg-white/95 px-4 backdrop-blur dark:border-gray-800 dark:bg-gray-950/95 sm:px-6"
+        class="sticky top-0 z-30 flex h-16 items-center border-b border-gray-300 bg-white/95 px-4 backdrop-blur sm:px-6"
       >
 
         <!-- Mobile menu -->
@@ -188,7 +191,7 @@ const logout = async () => {
       </header>
 
       <!-- Page content -->
-      <main class="p-4 sm:p-6 lg:p-8 bg-white dark:bg-black min-h-[calc(100vh-64px)]">
+      <main class="p-4 sm:p-6 lg:p-8 bg-white min-h-[calc(100vh-64px)]">
         <slot />
       </main>
 

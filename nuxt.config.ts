@@ -8,7 +8,7 @@ export default defineNuxtConfig({
     host: '0.0.0.0',
     port: 3000
   },
-  modules: ['@qirolab/nuxt-sanctum-authentication', '@nuxt/icon'],
+  modules: ['@qirolab/nuxt-sanctum-authentication', '@nuxt/icon','@nuxtjs/color-mode'],
   ssr: false,
 
   runtimeConfig: {

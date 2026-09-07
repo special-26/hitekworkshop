@@ -12,7 +12,7 @@ const navigation = [
   },
   {
     label: 'Job Cards',
-    to: '/',
+    to: '/job-cards',
     icon: 'i-lucide-clipboard-list',
     permission: 'job-cards.view'
   },

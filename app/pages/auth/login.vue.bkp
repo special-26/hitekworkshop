@@ -69,7 +69,7 @@
         middleware: ['$guest'],
     });
     
-    const { login, user } = useSanctum();
+    const { login } = useSanctum();
 
     import loginImage from "@/assets/integration-illus.webp";
 
@@ -79,18 +79,7 @@
     });
 
     const submitForm = async () => {
-        try {
-            await login(form.value)
-
-            if (user.value?.data?.roles?.includes('Mechanic')) {
-                await navigateTo('/mechanics/tasks')
-                return
-            }
-
-            await navigateTo('/auth/dashboard')
-        } catch (error) {
-            console.error('Login failed:', error)
-        }
+        await login(form.value)
     }
 
 </script>

@@ -49,11 +49,11 @@
 
         <!-- Welcome -->
         <div class="mb-8">
-            <h1 class="text-2xl font-bold text-gray-900 dark:text-white">
+            <h1 class="text-2xl font-bold text-gray-900 ">
                 Dashboard
             </h1>
 
-            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+            <p class="mt-1 text-sm text-gray-500 ">
                 Welcome back, {{ user?.data?.user?.name }}.
             </p>
         </div>
@@ -66,24 +66,24 @@
             <div
                 v-for="stat in visibleStats"
                 :key="stat.label"
-                class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-950"
+                class="rounded-xl border border-gray-300 bg-white p-5 shadow-lg"
             >
                 <div class="flex items-center justify-between">
 
                 <div>
-                    <p class="text-sm text-gray-500 dark:text-gray-400">
+                    <p class="text-sm text-gray-500 ">
                     {{ stat.label }}
                     </p>
 
-                    <p class="mt-2 text-3xl font-bold text-gray-900 dark:text-white">
+                    <p class="mt-2 text-3xl font-bold text-gray-900 ">
                     {{ stat.value }}
                     </p>
                 </div>
 
-                <div class="rounded-lg bg-gray-100 p-3 dark:bg-gray-800">
+                <div class="rounded-lg bg-gray-100 p-3">
                     <Icon
                     :name="stat.icon"
-                    class="size-6 text-gray-600 dark:text-gray-300"
+                    class="size-6 text-gray-600"
                     />
                 </div>
 
@@ -93,7 +93,7 @@
 
         <!-- Quick Actions -->
         <div class="mt-8">
-            <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
+            <h2 class="text-lg font-semibold text-gray-900 ">
                 Quick Actions
             </h2>
 
@@ -102,7 +102,7 @@
                 <NuxtLink
                     v-if="hasPermission('job-cards.view')"
                     to="/job-cards"
-                    class="rounded-xl border border-gray-200 bg-white p-5 transition hover:border-gray-400 hover:shadow-sm dark:border-gray-800 dark:bg-gray-950 dark:text-white"
+                    class="rounded-xl border border-gray-300 bg-white p-5 shadow-lg transition hover:border-gray-400 hover:shadow-sm   "
                 >
                     <Icon
                         name="i-lucide-clipboard-list"
@@ -120,7 +120,7 @@
                 <NuxtLink
                 v-if="hasPermission('bays.view')"
                 to="/bays"
-                class="rounded-xl border border-gray-200 bg-white p-5 transition hover:border-gray-400 hover:shadow-sm dark:border-gray-800 dark:bg-gray-950 dark:text-white"
+                class="rounded-xl border border-gray-300 bg-white p-5 shadow-lg transition hover:border-gray-400 hover:shadow-sm   "
                 >
                     <Icon
                         name="i-lucide-warehouse"
@@ -139,7 +139,7 @@
                 <NuxtLink
                 v-if="hasPermission('customers.view')"
                 to="/customers"
-                class="rounded-xl border border-gray-200 bg-white p-5 transition hover:border-gray-400 hover:shadow-sm dark:border-gray-800 dark:bg-gray-950 dark:text-white"
+                class="rounded-xl border border-gray-300 bg-white p-5 shadow-lg transition hover:border-gray-400 hover:shadow-sm   "
                 >
                     <Icon
                         name="i-lucide-users"
@@ -157,7 +157,7 @@
                 <NuxtLink
                 v-if="hasPermission('employees.view')"
                 to="/employees"
-                class="rounded-xl border border-gray-200 bg-white p-5 transition hover:border-gray-400 hover:shadow-sm dark:border-gray-800 dark:bg-gray-950 dark:text-white"
+                class="rounded-xl border border-gray-300 bg-white p-5 shadow-lg transition hover:border-gray-400 hover:shadow-sm   "
                 >
                     <Icon
                         name="i-lucide-user-cog"
@@ -177,10 +177,10 @@
         </div>
 
         <!-- Recent Activity -->
-        <div class="mt-8 rounded-xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-gray-950">
+        <div class="mt-8 rounded-xl border border-gray-300 bg-white p-5 shadow-lg ">
 
         <div class="flex items-center justify-between">
-            <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
+            <h2 class="text-lg font-semibold text-gray-900 ">
             Recent Activity
             </h2>
 

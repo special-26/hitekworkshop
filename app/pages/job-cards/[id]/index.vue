@@ -102,7 +102,7 @@ interface JobCardTask {
 
   department?: Department
   bay?: Bay
-  assignedEmployee?: {
+  assigned_employee?: {
     id: number
     employee_code: string
     designation: string | null
@@ -112,6 +112,43 @@ interface JobCardTask {
     }
   }
 }
+
+interface JobCardPart {
+  id: number
+  job_card_id: number
+  part_id: number
+  job_card_task_id: number | null
+  quantity: string | number
+  unit_price: string | number
+  discount: string | number
+  total: string | number
+  status: 'pending' | 'issued' | 'returned' | 'cancelled'
+  issued_by: string | number | null
+  issued_at: string | null
+  notes: string | null
+
+  part?: {
+    id: number
+    part_number: string
+    name: string
+    category: string | null
+    brand: string | null
+    unit: string
+    selling_price: string | number
+    current_stock: string | number
+  }
+
+  task?: {
+    id: number
+    title: string
+  }
+
+  issued_by_user?: {
+    id: string | number
+    name: string
+  }
+}
+
 
 const route = useRoute()
 const router = useRouter()
@@ -147,6 +184,148 @@ const tasks = ref<JobCardTask[]>([])
 const tasksLoading = ref(false)
 const taskSaving = ref(false)
 const taskError = ref('')
+
+// Job Card Parts
+const parts = ref<JobCardPart[]>([])
+const partsLoading = ref(false)
+const partsError = ref('')
+
+const availableParts = ref<any[]>([])
+const partsModalOpen = ref(false)
+const partSaving = ref(false)
+
+const partForm = reactive({
+  part_id: '',
+  job_card_task_id: '',
+  quantity: '1',
+  unit_price: '',
+  discount: '0',
+  notes: '',
+})
+
+const selectedPart = computed(() => {
+  if (!partForm.part_id) {
+    return null
+  }
+
+  return availableParts.value.find(
+    part => String(part.id) === String(partForm.part_id)
+  ) || null
+})
+
+watch(
+  () => partForm.part_id,
+  () => {
+    if (selectedPart.value) {
+      partForm.unit_price = String(
+        selectedPart.value.selling_price ?? ''
+      )
+    } else {
+      partForm.unit_price = ''
+    }
+  }
+)
+const partTotal = computed(() => {
+  const quantity = Number(partForm.quantity) || 0
+  const unitPrice = Number(partForm.unit_price) || 0
+  const discount = Number(partForm.discount) || 0
+
+  return Math.max(
+    0,
+    quantity * unitPrice - discount
+  )
+})
+
+// Open/close modal of Add Parts
+const resetPartForm = () => {
+  partForm.part_id = ''
+  partForm.job_card_task_id = ''
+  partForm.quantity = '1'
+  partForm.unit_price = ''
+  partForm.discount = '0'
+  partForm.notes = ''
+}
+
+const openCreatePart = async () => {
+  resetPartForm()
+  partsError.value = ''
+
+  if (availableParts.value.length === 0) {
+    await fetchAvailableParts()
+  }
+
+  partsModalOpen.value = true
+}
+
+const closePartModal = () => {
+  if (partSaving.value) {
+    return
+  }
+
+  partsModalOpen.value = false
+}
+
+// Save Parts
+const savePart = async () => {
+  if (!jobCard.value) {
+    return
+  }
+
+  if (!partForm.part_id) {
+    partsError.value = 'Please select a part.'
+    return
+  }
+
+  partSaving.value = true
+  partsError.value = ''
+
+  try {
+    await api(
+      `/api/admin/job-cards/${jobCard.value.id}/parts`,
+      {
+        method: 'POST',
+        body: {
+          part_id: Number(partForm.part_id),
+
+          job_card_task_id:
+            partForm.job_card_task_id
+              ? Number(partForm.job_card_task_id)
+              : null,
+
+          quantity: Number(partForm.quantity),
+
+          unit_price:
+            partForm.unit_price
+              ? Number(partForm.unit_price)
+              : null,
+
+          discount:
+            partForm.discount
+              ? Number(partForm.discount)
+              : 0,
+
+          notes:
+            partForm.notes || null,
+        },
+      }
+    )
+
+    partsModalOpen.value = false
+
+    resetPartForm()
+
+    await fetchParts()
+  } catch (err: any) {
+    console.error(err)
+
+    partsError.value =
+      err?.data?.message ||
+      err?.response?._data?.message ||
+      'Unable to add part.'
+  } finally {
+    partSaving.value = false
+  }
+}
 
 const taskModalOpen = ref(false)
 const editingTask = ref<JobCardTask | null>(null)
@@ -213,6 +392,82 @@ const taskStatusLabel = (
   )
 }
 
+// Fetching added Parts
+const fetchAvailableParts = async () => {
+  try {
+    const response = await api('/api/admin/parts', {
+      query: {
+        is_active: true,
+        per_page: 100,
+      },
+    })
+
+    const data = response.data
+
+    availableParts.value = Array.isArray(data)
+      ? data
+      : Array.isArray(data?.data)
+        ? data.data
+        : []
+  } catch (err: any) {
+    console.error(err)
+
+    partsError.value =
+      err?.data?.message ||
+      err?.response?._data?.message ||
+      'Unable to load parts.'
+  }
+}
+const issuePart = async (partId: number) => {
+  if (!jobCard.value) return
+
+  if (!confirm('Issue this part from stock?')) return
+
+  try {
+    await api(
+      `/api/admin/job-cards/${jobCard.value.id}/parts/${partId}/issue`,
+      {
+        method: 'PATCH',
+      }
+    )
+
+    await Promise.all([
+      fetchParts(),
+      fetchJobCard(),
+    ])
+  } catch (err: any) {
+    alert(
+      err?.data?.message ||
+      'Failed to issue part.'
+    )
+  }
+}
+const returnPart = async (partId: number) => {
+  if (!jobCard.value) return
+
+  if (!confirm('Return this part to stock?')) return
+
+  try {
+    await api(
+      `/api/admin/job-cards/${jobCard.value.id}/parts/${partId}/return`,
+      {
+        method: 'PATCH',
+      }
+    )
+
+    await Promise.all([
+      fetchParts(),
+      fetchJobCard(),
+    ])
+  } catch (err: any) {
+    alert(
+      err?.data?.message ||
+      'Failed to return part.'
+    )
+  }
+}
+// Parts ends
+
 const fetchTasks = async () => {
   if (!jobCard.value) {
     return
@@ -238,6 +493,34 @@ const fetchTasks = async () => {
       'Unable to load job card tasks.'
   } finally {
     tasksLoading.value = false
+  }
+}
+
+const fetchParts = async () => {
+  if (!jobCard.value) {
+    return
+  }
+
+  partsLoading.value = true
+  partsError.value = ''
+
+  try {
+    const response = await api(
+      `/api/admin/job-cards/${jobCard.value.id}/parts`
+    )
+
+    parts.value = Array.isArray(response.data)
+      ? response.data
+      : []
+  } catch (err: any) {
+    console.error(err)
+
+    partsError.value =
+      err?.data?.message ||
+      err?.response?._data?.message ||
+      'Unable to load job card parts.'
+  } finally {
+    partsLoading.value = false
   }
 }
 
@@ -567,7 +850,11 @@ const fetchJobCard = async () => {
     )
 
     jobCard.value = response.data
-    await fetchTasks()
+
+    await Promise.all([
+      fetchTasks(),
+      fetchParts(),
+    ])
 
   } catch (err: any) {
     console.error(err)
@@ -639,6 +926,28 @@ const formatCost = (
     minimumFractionDigits: 0,
     maximumFractionDigits: 2,
   })}`
+}
+
+const partStatusClass = (status: string) => {
+  const classes: Record<string, string> = {
+    pending: 'badge-warning',
+    issued: 'badge-success',
+    returned: 'badge-info',
+    cancelled: 'badge-error',
+  }
+
+  return classes[status] || 'badge-ghost'
+}
+
+const partStatusLabel = (status: string) => {
+  const labels: Record<string, string> = {
+    pending: 'Pending',
+    issued: 'Issued',
+    returned: 'Returned',
+    cancelled: 'Cancelled',
+  }
+
+  return labels[status] || status
 }
 
 /*
@@ -1598,7 +1907,7 @@ onMounted(async () => {
             </div>
 
             <button
-              v-if="hasPermission('job-card-tasks.create')"
+              v-if="hasPermission('job-cards-tasks.create')"
               type="button"
               class="btn btn-primary btn-sm"
               @click="openCreateTask"
@@ -1654,7 +1963,7 @@ onMounted(async () => {
             </p>
 
             <button
-              v-if="hasPermission('job-card-tasks.create')"
+              v-if="hasPermission('job-cards-tasks.create')"
               type="button"
               class="btn btn-primary btn-sm mt-4"
               @click="openCreateTask"
@@ -1740,7 +2049,7 @@ onMounted(async () => {
                     </span>
 
                     <span
-                      v-if="task.assignedEmployee"
+                      v-if="task.assigned_employee"
                       class="flex items-center gap-1.5"
                     >
                       <Icon
@@ -1749,8 +2058,8 @@ onMounted(async () => {
                       />
 
                       {{
-                        task.assignedEmployee.user?.name ||
-                        task.assignedEmployee.employee_code
+                        task.assigned_employee.user?.name ||
+                        task.assigned_employee.employee_code
                       }}
                     </span>
 
@@ -1783,7 +2092,7 @@ onMounted(async () => {
                 <!-- Actions -->
                 <div class="flex flex-wrap gap-2">
                   <button
-                    v-if="hasPermission('job-card-tasks.update')"
+                    v-if="hasPermission('job-cards-tasks.update')"
                     type="button"
                     class="btn btn-ghost btn-sm"
                     @click="openEditTask(task)"
@@ -1797,7 +2106,7 @@ onMounted(async () => {
                   </button>
 
                   <div
-                    v-if="hasPermission('job-card-tasks.status.update')"
+                    v-if="hasPermission('job-cards-tasks.status.update')"
                     class="dropdown dropdown-end"
                   >
                     <button
@@ -1852,6 +2161,260 @@ onMounted(async () => {
               </div>
             </div>
           </div>
+        </div>
+      </div>
+
+      <!-- Parts -->
+      <div class="card mt-6 border border-base-300 bg-base-100 shadow-sm">
+        <div class="card-body">
+
+          <!-- Header -->
+          <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 class="text-lg font-semibold">
+                Parts
+              </h2>
+
+              <p class="text-sm text-base-content/60">
+                Parts required and issued for this job card.
+              </p>
+            </div>
+
+            <button
+              v-if="hasPermission('parts.create')"
+              type="button"
+              class="btn btn-primary btn-sm"
+              @click="openCreatePart"
+            >
+              <Icon
+                name="lucide:plus"
+                class="size-4"
+              />
+
+              Add Part
+            </button>
+          </div>
+
+          <!-- Error -->
+          <div
+            v-if="partsError"
+            class="alert alert-error mt-5"
+          >
+            <Icon
+              name="lucide:circle-alert"
+              class="size-5"
+            />
+
+            <span>
+              {{ partsError }}
+            </span>
+          </div>
+
+          <!-- Loading -->
+          <div
+            v-if="partsLoading"
+            class="flex items-center justify-center py-12"
+          >
+            <span class="loading loading-spinner loading-md"></span>
+          </div>
+
+          <!-- Empty -->
+          <div
+            v-else-if="parts.length === 0"
+            class="mt-5 rounded-xl border border-dashed border-base-300 bg-base-200 p-10 text-center"
+          >
+            <div
+              class="mx-auto flex size-12 items-center justify-center rounded-xl bg-primary/10"
+            >
+              <Icon
+                name="lucide:package"
+                class="size-6 text-primary"
+              />
+            </div>
+
+            <h3 class="mt-4 font-semibold">
+              No parts added
+            </h3>
+
+            <p class="mt-1 text-sm text-base-content/60">
+              No parts have been added to this job card yet.
+            </p>
+          </div>
+
+          <!-- Parts -->
+          <div
+            v-else
+            class="mt-5 space-y-3"
+          >
+            <div
+              v-for="(jobCardPart, index) in parts"
+              :key="jobCardPart.id"
+              class="rounded-xl border border-base-300 bg-base-200 p-4"
+            >
+              <div class="flex flex-col gap-4 lg:flex-row lg:items-start">
+
+                <!-- Number -->
+                <div
+                  class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-base-300 text-sm font-semibold"
+                >
+                  {{ index + 1 }}
+                </div>
+
+                <!-- Main -->
+                <div class="min-w-0 flex-1">
+
+                  <!-- Part name + status -->
+                  <div class="flex flex-wrap items-center gap-2">
+                    <h3 class="font-semibold">
+                      {{ jobCardPart.part?.name || 'Part' }}
+                    </h3>
+
+                    <span
+                      class="badge badge-sm"
+                      :class="partStatusClass(jobCardPart.status)"
+                    >
+                      {{ partStatusLabel(jobCardPart.status) }}
+                    </span>
+                  </div>
+
+                  <!-- Part number / brand -->
+                  <div
+                    v-if="jobCardPart.part"
+                    class="mt-2 flex flex-wrap gap-x-5 gap-y-2 text-xs text-base-content/50"
+                  >
+                    <span class="flex items-center gap-1.5">
+                      <Icon
+                        name="lucide:package"
+                        class="size-3.5"
+                      />
+
+                      {{ jobCardPart.part.part_number }}
+                    </span>
+
+                    <span
+                      v-if="jobCardPart.part.brand"
+                      class="flex items-center gap-1.5"
+                    >
+                      <Icon
+                        name="lucide:tag"
+                        class="size-3.5"
+                      />
+
+                      {{ jobCardPart.part.brand }}
+                    </span>
+
+                    <span
+                      v-if="jobCardPart.task"
+                      class="flex items-center gap-1.5"
+                    >
+                      <Icon
+                        name="lucide:clipboard-list"
+                        class="size-3.5"
+                      />
+
+                      {{ jobCardPart.task.title }}
+                    </span>
+                  </div>
+
+                  <!-- Quantity / Price / Total -->
+                  <div class="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+
+                    <div class="rounded-lg bg-base-100 p-3">
+                      <p class="text-xs text-base-content/50">
+                        Quantity
+                      </p>
+
+                      <p class="mt-1 font-semibold">
+                        {{ jobCardPart.quantity }}
+                        {{ jobCardPart.part?.unit || 'pcs' }}
+                      </p>
+                    </div>
+
+                    <div class="rounded-lg bg-base-100 p-3">
+                      <p class="text-xs text-base-content/50">
+                        Unit Price
+                      </p>
+
+                      <p class="mt-1 font-semibold">
+                        {{ formatCost(jobCardPart.unit_price) }}
+                      </p>
+                    </div>
+
+                    <div class="rounded-lg bg-base-100 p-3">
+                      <p class="text-xs text-base-content/50">
+                        Discount
+                      </p>
+
+                      <p class="mt-1 font-semibold">
+                        {{ formatCost(jobCardPart.discount) }}
+                      </p>
+                    </div>
+
+                    <div class="rounded-lg bg-base-100 p-3">
+                      <p class="text-xs text-base-content/50">
+                        Total
+                      </p>
+
+                      <p class="mt-1 font-semibold text-primary">
+                        {{ formatCost(jobCardPart.total) }}
+                      </p>
+                    </div>
+
+                  </div>
+
+                                    <!-- Part Actions -->
+                  <div class="mt-4 flex flex-wrap justify-end gap-2">
+                    <!-- Pending → Issue -->
+                    <button
+                      v-if="jobCardPart.status === 'pending'"
+                      type="button"
+                      class="btn btn-primary btn-sm"
+                      @click="issuePart(jobCardPart.id)"
+                    >
+                      <Icon
+                        name="lucide:package-check"
+                        class="size-4"
+                      />
+
+                      Issue Part
+                    </button>
+
+                    <!-- Issued → Return -->
+                    <button
+                      v-else-if="jobCardPart.status === 'issued'"
+                      type="button"
+                      class="btn btn-warning btn-sm"
+                      @click="returnPart(jobCardPart.id)"
+                    >
+                      <Icon
+                        name="lucide:package-minus"
+                        class="size-4"
+                      />
+
+                      Return Part
+                    </button>
+
+                    <!-- Returned -->
+                    <span
+                      v-else-if="jobCardPart.status === 'returned'"
+                      class="badge badge-info gap-1 py-3"
+                    >
+                      <Icon
+                        name="lucide:rotate-ccw"
+                        class="size-3.5"
+                      />
+
+                      Returned to Stock
+                    </span>
+                  </div>
+
+                </div>
+
+              </div>
+            </div>
+
+          </div>
+
         </div>
       </div>
 
@@ -2135,6 +2698,230 @@ onMounted(async () => {
         >
           close
         </button>
+      </form>
+    </dialog>
+
+    <!-- Add Part Modal -->
+    <dialog
+      class="modal"
+      :class="{
+        'modal-open': partsModalOpen,
+      }"
+    >
+      <div class="modal-box max-w-2xl">
+
+        <div class="flex items-start justify-between gap-4">
+          <div>
+            <h3 class="text-lg font-bold">
+              Add Part
+            </h3>
+
+            <p class="mt-1 text-sm text-base-content/60">
+              Add a part to this job card.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            class="btn btn-ghost btn-sm btn-circle"
+            :disabled="partSaving"
+            @click="closePartModal"
+          >
+            <Icon
+              name="lucide:x"
+              class="size-4"
+            />
+          </button>
+        </div>
+
+        <!-- Error -->
+        <div
+          v-if="partsError"
+          class="alert alert-error mt-5"
+        >
+          <Icon
+            name="lucide:circle-alert"
+            class="size-5"
+          />
+
+          <span>
+            {{ partsError }}
+          </span>
+        </div>
+
+        <div class="mt-5 grid grid-cols-1 gap-5 md:grid-cols-2">
+
+          <!-- Part -->
+          <fieldset class="fieldset md:col-span-2">
+            <legend class="fieldset-legend">
+              Part
+            </legend>
+
+            <select
+              v-model="partForm.part_id"
+              class="select select-bordered w-full"
+            >
+              <option value="">
+                Select part
+              </option>
+
+              <option
+                v-for="part in availableParts"
+                :key="part.id"
+                :value="part.id"
+              >
+                {{ part.part_number }} —
+                {{ part.name }}
+                <template v-if="part.brand">
+                  ({{ part.brand }})
+                </template>
+              </option>
+            </select>
+
+            <p
+              v-if="selectedPart"
+              class="mt-1 text-xs text-base-content/50"
+            >
+              Stock:
+              {{ selectedPart.current_stock }}
+              {{ selectedPart.unit }}
+            </p>
+          </fieldset>
+
+          <!-- Task -->
+          <fieldset class="fieldset md:col-span-2">
+            <legend class="fieldset-legend">
+              Related Task / Service
+            </legend>
+
+            <select
+              v-model="partForm.job_card_task_id"
+              class="select select-bordered w-full"
+            >
+              <option value="">
+                Not linked to a specific task
+              </option>
+
+              <option
+                v-for="task in tasks"
+                :key="task.id"
+                :value="task.id"
+              >
+                {{ task.title }}
+              </option>
+            </select>
+          </fieldset>
+
+          <!-- Quantity -->
+          <fieldset class="fieldset">
+            <legend class="fieldset-legend">
+              Quantity
+            </legend>
+
+            <input
+              v-model="partForm.quantity"
+              type="number"
+              min="0.01"
+              step="0.01"
+              class="input input-bordered w-full"
+              placeholder="e.g. 2"
+            />
+          </fieldset>
+
+          <!-- Unit Price -->
+          <fieldset class="fieldset">
+            <legend class="fieldset-legend">
+              Unit Price
+            </legend>
+
+            <input
+              v-model="partForm.unit_price"
+              type="number"
+              min="0"
+              step="0.01"
+              class="input input-bordered w-full"
+              placeholder="Selling price"
+            />
+          </fieldset>
+
+          <!-- Discount -->
+          <fieldset class="fieldset">
+            <legend class="fieldset-legend">
+              Discount
+            </legend>
+
+            <input
+              v-model="partForm.discount"
+              type="number"
+              min="0"
+              step="0.01"
+              class="input input-bordered w-full"
+              placeholder="0"
+            />
+          </fieldset>
+
+          <!-- Total -->
+          <div class="rounded-lg border border-primary/20 bg-primary/5 p-4">
+            <p class="text-xs text-base-content/50">
+              Total
+            </p>
+
+            <p class="mt-1 text-xl font-bold text-primary">
+              {{ formatCost(partTotal) }}
+            </p>
+          </div>
+
+          <!-- Notes -->
+          <fieldset class="fieldset md:col-span-2">
+            <legend class="fieldset-legend">
+              Notes
+            </legend>
+
+            <textarea
+              v-model="partForm.notes"
+              class="textarea textarea-bordered min-h-24 w-full"
+              placeholder="Optional notes..."
+            ></textarea>
+          </fieldset>
+
+        </div>
+
+        <!-- Actions -->
+        <div class="modal-action">
+          <button
+            type="button"
+            class="btn btn-ghost"
+            :disabled="partSaving"
+            @click="closePartModal"
+          >
+            Cancel
+          </button>
+
+          <button
+            type="button"
+            class="btn btn-primary"
+            :disabled="partSaving"
+            @click="savePart"
+          >
+            <span
+              v-if="partSaving"
+              class="loading loading-spinner loading-sm"
+            ></span>
+
+            <span v-else>
+              Add Part
+            </span>
+          </button>
+        </div>
+
+      </div>
+
+      <form
+        method="dialog"
+        class="modal-backdrop"
+        @click.prevent="closePartModal"
+      >
+        <button>close</button>
       </form>
     </dialog>
 

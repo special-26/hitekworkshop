@@ -268,7 +268,7 @@ onMounted(fetchTasks)
           <!-- Action -->
           <div class="card-actions mt-4">
             <NuxtLink
-              :to="`/mechanic/tasks/${task.id}`"
+              :to="`/mechanics/tasks/${task.id}`"
               class="btn btn-primary btn-sm w-full"
             >
               View Task

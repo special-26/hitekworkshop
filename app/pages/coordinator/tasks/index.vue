@@ -47,6 +47,21 @@ interface Employee {
   }
 }
 
+interface JobCardPart {
+  id: number
+  part_id: number
+  quantity: string | number
+  status: 'pending' | 'issued' | 'returned' | 'cancelled'
+  part: {
+    id: number
+    part_number: string
+    name: string
+    category?: string | null
+    brand?: string | null
+    unit: string
+  }
+}
+
 interface CoordinatorTask {
   id: number
   job_card_id: number
@@ -72,10 +87,14 @@ interface CoordinatorTask {
   job_card: JobCard
   department: Department
   bay?: Bay | null
-  assignedEmployee?: Employee | null
+  assigned_employee?: Employee | null
+  parts?: JobCardPart[]
 }
 
+
+
 const api = useApi()
+const route = useRoute()
 
 const tasks = ref<CoordinatorTask[]>([])
 const departments = ref<Department[]>([])
@@ -91,7 +110,9 @@ const error = ref('')
 */
 
 const filters = ref({
-  status: '',
+  status: typeof route.query.status === 'string'
+    ? route.query.status
+    : '',
   department_id: '',
   bay_id: '',
 })
@@ -243,6 +264,18 @@ watch(
     ) {
       filters.value.bay_id = ''
     }
+  }
+)
+
+watch(
+  () => route.query.status,
+  (status) => {
+    filters.value.status =
+      typeof status === 'string'
+        ? status
+        : ''
+
+    fetchTasks()
   }
 )
 
@@ -701,6 +734,61 @@ onMounted(async () => {
             <span class="font-medium text-base-content">
               {{ task.estimated_minutes }} min
             </span>
+          </div>
+
+          <!-- Parts -->
+          <div
+            v-if="task.parts?.length"
+            class="mt-3 rounded-lg border border-gray-300 shadow-xl p-3"
+          >
+            <div class="mb-2 flex items-center justify-between border-b pb-2 border-gray-300">
+              <span class="text-sm font-medium">
+                Parts
+              </span>
+
+              <span class="">
+                {{ task.parts.length }}
+              </span>
+            </div>
+
+            <div class="space-y-2">
+              <div
+                v-for="part in task.parts"
+                :key="part.id"
+                class="flex items-center justify-between gap-3 text-sm"
+              >
+                <div class="min-w-0">
+                  <div class="truncate font-medium">
+                    {{ part.part.name }}
+                  </div>
+
+                  <div class="text-xs text-base-content/50">
+                    {{ part.part.part_number }}
+                  </div>
+                </div>
+
+                <div class="shrink-0 text-right">
+                  <div class="font-medium">
+                    {{ part.quantity }} {{ part.part.unit }}
+                  </div>
+
+                  <div
+                    class="text-xs capitalize"
+                    :class="
+                      part.status === 'issued'
+                        ? 'text-success'
+                        : part.status === 'returned'
+                          ? 'text-warning'
+                          : part.status === 'cancelled'
+                            ? 'text-error'
+                            : 'text-base-content/50'
+                    "
+                  >
+                    {{ part.status }}
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
 
           <!-- Action -->

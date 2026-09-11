@@ -52,9 +52,30 @@ interface MechanicTask {
   started_at?: string | null
   completed_at?: string | null
   notes?: string | null
+
   job_card: JobCard
   department: Department
   bay?: Bay | null
+  parts?: JobCardPart[]
+}
+
+interface JobCardPart {
+  id: number
+  part_id: number
+  quantity: string | number
+  unit_price?: string | number | null
+  discount?: string | number | null
+  total?: string | number | null
+  status: 'pending' | 'issued' | 'returned' | 'cancelled'
+  notes?: string | null
+  part: {
+    id: number
+    part_number: string
+    name: string
+    category?: string | null
+    brand?: string | null
+    unit: string
+  }
 }
 
 const route = useRoute()
@@ -468,6 +489,91 @@ onMounted(fetchTask)
 
               <div class="mt-1 text-sm">
                 {{ task.notes }}
+              </div>
+            </div>
+          </div>
+        </div>
+
+                <!-- Parts Used -->
+        <div
+          v-if="task.parts?.length"
+          class="card border border-base-300 bg-base-200"
+        >
+          <div class="card-body">
+            <div class="flex items-center justify-between">
+              <h2 class="card-title text-lg">
+                Parts
+              </h2>
+
+              <span class="badge badge-neutral">
+                {{ task.parts.length }}
+              </span>
+            </div>
+
+            <div class="mt-3 space-y-3">
+              <div
+                v-for="part in task.parts"
+                :key="part.id"
+                class="rounded-lg border border-base-300 bg-base-100 p-4"
+              >
+                <div class="flex items-start justify-between gap-3">
+                  <div class="min-w-0">
+                    <div class="font-semibold">
+                      {{ part.part.name }}
+                    </div>
+
+                    <div class="mt-1 text-xs text-base-content/60">
+                      {{ part.part.part_number }}
+                      <span v-if="part.part.brand">
+                        · {{ part.part.brand }}
+                      </span>
+                    </div>
+                  </div>
+
+                  <span
+                    class="badge capitalize"
+                    :class="
+                      part.status === 'issued'
+                        ? 'badge-success'
+                        : part.status === 'returned'
+                          ? 'badge-warning'
+                          : part.status === 'cancelled'
+                            ? 'badge-error'
+                            : 'badge-ghost'
+                    "
+                  >
+                    {{ part.status }}
+                  </span>
+                </div>
+
+                <div class="mt-3 grid grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <div class="text-xs text-base-content/50">
+                      Quantity
+                    </div>
+
+                    <div class="font-medium">
+                      {{ part.quantity }} {{ part.part.unit }}
+                    </div>
+                  </div>
+
+                  <div v-if="part.total !== null && part.total !== undefined">
+                    <div class="text-xs text-base-content/50">
+                      Total
+                    </div>
+
+                    <div class="font-medium">
+                      ₹{{ part.total }}
+                    </div>
+                  </div>
+                </div>
+
+                <div
+                  v-if="part.notes"
+                  class="mt-3 text-sm text-base-content/70"
+                >
+                  {{ part.notes }}
+                </div>
               </div>
             </div>
           </div>

@@ -1216,7 +1216,10 @@ const taskDepartmentEmployees = computed(() => {
     employee =>
       employee.status === 'active' &&
       employee.department_id ===
-        Number(taskForm.department_id)
+        Number(taskForm.department_id) &&
+      employee.user?.roles?.some(
+        role => role.name === 'Mechanic'
+      )
   )
 })
 

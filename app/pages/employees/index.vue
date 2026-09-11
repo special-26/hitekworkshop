@@ -40,6 +40,9 @@
 
     const search = ref('')
 
+    const role = ref('')
+    const roles = ref<{ uuid: string; name: string }[]>([])
+
     const status = ref('')
     const showStatusModal = ref(false)
     const selectedEmployee = ref<Employee | null>(null)
@@ -56,7 +59,8 @@
               query: {
                   page: currentPage.value,
                   search: search.value || undefined,
-                  status: status.value || undefined
+                  status: status.value || undefined,
+                  role: role.value || undefined,
               }
           })
 
@@ -76,6 +80,16 @@
       }
     }
 
+    const fetchRoles = async () => {
+      try {
+        const response = await api('/api/admin/roles')
+        console.log('Roles API Response:', response)
+        roles.value = response.data
+      } catch (err) {
+        console.error('Unable to fetch roles:', err)
+      }
+    }
+
     const applyFilters = () => {
         currentPage.value = 1
         fetchEmployees()
@@ -83,6 +97,7 @@
 
     const clearFilters = () => {
         search.value = ''
+        role.value = ''
         status.value = ''
         currentPage.value = 1
 
@@ -185,10 +200,11 @@
         return isActive
             ? 'badge-success'
             : 'badge-error'
-        }
+    }
 
-        onMounted(() => {
-        fetchEmployees()
+    onMounted(() => {
+      fetchEmployees()
+      fetchRoles()
     })
     
 </script>
@@ -238,7 +254,7 @@
 
       <div class="card-body p-4">
 
-        <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
+        <div class="grid grid-cols-1 gap-4 md:grid-cols-4">
 
           <!-- Search -->
           <label class="input input-bordered flex items-center gap-2">
@@ -267,6 +283,24 @@
             >
 
           </label>
+
+          <!-- Role -->
+          <select
+              v-model="role"
+              class="select select-bordered w-full"
+          >
+              <option value="">
+                  All Roles
+              </option>
+
+              <option
+                  v-for="item in roles"
+                  :key="item.uuid"
+                  :value="item.name"
+              >
+                  {{ item.name }}
+              </option>
+          </select>
 
           <!-- Status -->
           <select

@@ -1,8 +1,9 @@
 <template>
 	<Navbar />
-
 	<slot />
 
 </template>
 
-<script></script>
+<script>
+
+</script>

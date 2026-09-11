@@ -71,6 +71,16 @@ const submit = async () => {
     loading.value = false
   }
 }
+
+const indianStates = [
+  "Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar", "Chhattisgarh", 
+  "Goa", "Gujarat", "Haryana", "Himachal Pradesh", "Jharkhand", "Karnataka", 
+  "Kerala", "Madhya Pradesh", "Maharashtra", "Manipur", "Meghalaya", "Mizoram", 
+  "Nagaland", "Odisha", "Punjab", "Rajasthan", "Sikkim", "Tamil Nadu", 
+  "Telangana", "Tripura", "Uttar Pradesh", "Uttarakhand", "West Bengal",
+  "Andaman and Nicobar Islands", "Chandigarh", "Dadra and Nagar Haveli and Daman and Diu", 
+  "Delhi", "Jammu and Kashmir", "Ladakh", "Lakshadweep", "Puducherry"
+]
 </script>
 
 <template>
@@ -292,6 +302,30 @@ const submit = async () => {
               </p>
             </fieldset>
 
+            <!-- State -->
+            <fieldset class="fieldset">
+              <legend class="fieldset-legend">
+                State
+              </legend>
+
+              <select 
+                class="select w-full"
+                v-model="form.state"
+              >
+                <option disabled selected>-- Choose a State/UT --</option>
+                <option v-for="state in indianStates" :key="state" :value="state">
+                  {{ state }}
+                </option>
+              </select>
+
+              <p
+                v-if="fieldError('state')"
+                class="label text-error"
+              >
+                {{ fieldError('state') }}
+              </p>
+            </fieldset>
+
             <!-- City -->
             <fieldset class="fieldset">
               <legend class="fieldset-legend">
@@ -313,30 +347,6 @@ const submit = async () => {
                 class="label text-error"
               >
                 {{ fieldError('city') }}
-              </p>
-            </fieldset>
-
-            <!-- State -->
-            <fieldset class="fieldset">
-              <legend class="fieldset-legend">
-                State
-              </legend>
-
-              <input
-                v-model="form.state"
-                type="text"
-                class="input input-bordered w-full"
-                :class="{
-                  'input-error': fieldError('state'),
-                }"
-                placeholder="Punjab"
-              />
-
-              <p
-                v-if="fieldError('state')"
-                class="label text-error"
-              >
-                {{ fieldError('state') }}
               </p>
             </fieldset>
 

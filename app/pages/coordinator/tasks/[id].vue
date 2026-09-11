@@ -52,25 +52,49 @@ interface Employee {
   }
 }
 
+interface JobCardPart {
+  id: number
+  part_id: number
+  quantity: string | number
+  unit_price?: string | number | null
+  discount?: string | number | null
+  total?: string | number | null
+  status: 'pending' | 'issued' | 'returned' | 'cancelled'
+  notes?: string | null
+  part: {
+    id: number
+    part_number: string
+    name: string
+    category?: string | null
+    brand?: string | null
+    unit: string
+  }
+}
+
 interface CoordinatorTask {
   id: number
   job_card_id: number
   department_id: number
   bay_id?: number | null
   assigned_to?: number | null
+
   title: string
   description?: string | null
   status: 'pending' | 'assigned' | 'in_progress' | 'on_hold' | 'completed' | 'cancelled'
+
   estimated_minutes?: number | null
   actual_minutes?: number | null
   labour_cost?: string | number | null
   started_at?: string | null
   completed_at?: string | null
   notes?: string | null
+
   job_card: JobCard
   department: Department
   bay?: Bay | null
-  assignedEmployee?: Employee | null
+  assigned_employee?: Employee | null
+  
+  parts?: JobCardPart[]
 }
 
 const route = useRoute()
@@ -330,7 +354,11 @@ const saveAssignment = async () => {
 |--------------------------------------------------------------------------
 */
 
-const statusLabel = (status: string) => {
+const statusLabel = (status?: string | null) => {
+  if (!status) {
+    return '—'
+  }
+
   return status.replace('_', ' ')
 }
 
@@ -440,10 +468,14 @@ const availableActions = computed(() => {
 */
 
 const statusConfirmOpen = ref(false)
-const statusConfirmValue = ref('')
+const statusConfirmValue = ref<
+  'pending' | 'assigned' | 'in_progress' | 'on_hold' | 'completed' | 'cancelled' | ''
+>('')
 const statusConfirmLabel = ref('')
 
-const requestStatusChange = (newStatus: string) => {
+const requestStatusChange = (
+  newStatus: 'pending' | 'assigned' | 'in_progress' | 'on_hold' | 'completed' | 'cancelled'
+) => {
   if (!task.value) {
     return
   }
@@ -465,7 +497,9 @@ const requestStatusChange = (newStatus: string) => {
   updateStatus(newStatus)
 }
 
-const updateStatus = async (newStatus: string) => {
+const updateStatus = async (
+  newStatus: 'pending' | 'assigned' | 'in_progress' | 'on_hold' | 'completed' | 'cancelled'
+) => {
   if (!task.value) {
     return
   }
@@ -475,7 +509,7 @@ const updateStatus = async (newStatus: string) => {
 
   try {
     const response = await api(
-      `/api/coordinator/tasks/${task.value.id}/status`,
+      `/api/admin/coordinator/tasks/${task.value.id}/status`,
       {
         method: 'PATCH',
         body: {
@@ -549,7 +583,7 @@ onMounted(async () => {
           v-if="task"
           class="text-sm text-base-content/60"
         >
-          {{ task.job_card.job_card_number }}
+          {{ task.job_card?.job_card_number ?? '—' }}
         </p>
       </div>
     </div>
@@ -638,15 +672,15 @@ onMounted(async () => {
               </h2>
 
               <div class="mt-2 text-lg font-bold">
-                {{ task.job_card.vehicle.registration_number }}
+                {{ task.job_card?.vehicle?.registration_number ?? '—' }}
               </div>
 
               <div class="text-base-content/70">
-                {{ task.job_card.vehicle.make }}
-                {{ task.job_card.vehicle.model }}
+                {{ task.job_card?.vehicle?.make ?? '—' }}
+                {{ task.job_card?.vehicle?.model ?? '—' }}
 
-                <span v-if="task.job_card.vehicle.variant">
-                  · {{ task.job_card.vehicle.variant }}
+                <span v-if="task.job_card?.vehicle?.variant">
+                  · {{ task.job_card?.vehicle?.variant ?? '—' }}
                 </span>
               </div>
 
@@ -656,7 +690,7 @@ onMounted(async () => {
                     Fuel
                   </div>
 
-                  {{ task.job_card.vehicle.fuel_type || '—' }}
+                  {{ task.job_card?.vehicle?.fuel_type ?? '—' }}
                 </div>
 
                 <div>
@@ -664,7 +698,7 @@ onMounted(async () => {
                     Odometer
                   </div>
 
-                  {{ task.job_card.vehicle.current_odometer || '—' }}
+                  {{ task.job_card?.vehicle?.current_odometer ?? '—' }}
                 </div>
               </div>
             </div>
@@ -678,11 +712,11 @@ onMounted(async () => {
               </h2>
 
               <div class="mt-2 font-semibold">
-                {{ task.job_card.customer.name }}
+                {{ task.job_card?.customer?.name ?? '—' }}
               </div>
 
               <div class="text-sm text-base-content/60">
-                {{ task.job_card.customer.phone }}
+                {{ task.job_card?.customer?.phone ?? '—' }}
               </div>
             </div>
           </div>
@@ -820,6 +854,47 @@ onMounted(async () => {
 
             </div>
 
+          </div>
+        </div>
+
+        <!-- Parts -->
+        <div
+          v-if="task?.parts?.length"
+          class="card bg-base-200 shadow-sm"
+        >
+          <div class="card-body">
+            <h2 class="card-title text-base">
+              Parts
+            </h2>
+
+            <div
+              v-for="jobCardPart in task.parts"
+              :key="jobCardPart.id"
+              class="flex items-center justify-between gap-3 border-b border-base-300 py-3 last:border-0"
+            >
+              <div class="min-w-0">
+                <p class="font-medium">
+                  {{ jobCardPart.part.name }}
+                </p>
+
+                <p class="text-sm text-base-content/60">
+                  {{ jobCardPart.part.part_number }}
+                  · Qty: {{ jobCardPart.quantity }} {{ jobCardPart.part.unit }}
+                </p>
+              </div>
+
+              <span
+                class="badge badge-sm"
+                :class="{
+                  'badge-warning': jobCardPart.status === 'pending',
+                  'badge-success': jobCardPart.status === 'issued',
+                  'badge-info': jobCardPart.status === 'returned',
+                  'badge-error': jobCardPart.status === 'cancelled'
+                }"
+              >
+                {{ jobCardPart.status }}
+              </span>
+            </div>
           </div>
         </div>
 

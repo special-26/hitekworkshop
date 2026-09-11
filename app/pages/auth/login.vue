@@ -82,7 +82,14 @@
         try {
             await login(form.value)
 
-            if (user.value?.data?.roles?.includes('Mechanic')) {
+            const roles = user.value?.data?.roles || []
+
+            if (roles.includes('Mechanic Coordinator')) {
+                await navigateTo('/coordinator')
+                return
+            }
+
+            if (roles.includes('Mechanic')) {
                 await navigateTo('/mechanics/tasks')
                 return
             }

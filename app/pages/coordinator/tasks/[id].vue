@@ -500,12 +500,14 @@ const requestStatusChange = (
 const updateStatus = async (
   newStatus: 'pending' | 'assigned' | 'in_progress' | 'on_hold' | 'completed' | 'cancelled'
 ) => {
+  
   if (!task.value) {
     return
   }
 
   updatingStatus.value = true
   error.value = ''
+  
 
   try {
     const response = await api(

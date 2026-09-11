@@ -387,11 +387,11 @@ onMounted(() => {
     <!-- Header -->
     <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
       <div>
-        <h1 class="text-2xl font-bold text-base-content">
+        <h1 class="text-2xl font-bold text-gray-800">
           Job Cards
         </h1>
 
-        <p class="mt-1 text-sm text-base-content/60">
+        <p class="mt-1 text-sm text-gray-content/60">
           Manage workshop jobs, vehicles and service progress.
         </p>
       </div>
@@ -464,7 +464,7 @@ onMounted(() => {
       <label class="input input-bordered flex w-full items-center gap-2 lg:max-w-lg">
         <Icon
           name="lucide:search"
-          class="size-4 text-base-content/50"
+          class="size-4 text-gray-content/50"
         />
 
         <input
@@ -520,7 +520,7 @@ onMounted(() => {
           </option>
         </select>
 
-        <div class="text-sm text-base-content/50">
+        <div class="text-sm text-gray-content/50">
           {{ filteredJobCards.length }}
 
           {{
@@ -533,7 +533,7 @@ onMounted(() => {
     </div>
 
     <!-- Table -->
-    <div class="card mt-4 overflow-hidden border border-base-300 bg-base-100 shadow-sm">
+    <div class="card mt-4 overflow-hidden border border-gray-300 shadow-sm">
       <div class="overflow-x-auto">
         <table class="table">
           <thead>
@@ -551,7 +551,7 @@ onMounted(() => {
             </tr>
           </thead>
 
-          <tbody>
+          <tbody class="divide-y divide-gray-500">
             <!-- Loading -->
             <tr v-if="loading">
               <td
@@ -560,7 +560,7 @@ onMounted(() => {
               >
                 <span class="loading loading-spinner loading-lg" />
 
-                <p class="mt-3 text-sm text-base-content/60">
+                <p class="mt-3 text-sm text-gray-content/60">
                   Loading job cards...
                 </p>
               </td>
@@ -576,7 +576,7 @@ onMounted(() => {
               >
                 <Icon
                   name="lucide:clipboard-list"
-                  class="mx-auto size-12 text-base-content/30"
+                  class="mx-auto size-12 text-gray-content/30"
                 />
 
                 <p class="mt-3 font-medium">
@@ -587,7 +587,7 @@ onMounted(() => {
                   }}
                 </p>
 
-                <p class="mt-1 text-sm text-base-content/60">
+                <p class="mt-1 text-sm text-gray-content/60">
                   {{
                     search || statusFilter !== 'all'
                       ? 'Try changing your search or status filter.'
@@ -605,14 +605,13 @@ onMounted(() => {
             >
               <!-- Job Card -->
               <td>
-                <div>
-                  <code class="rounded bg-base-200 px-2 py-1 text-sm font-semibold">
-                    {{ jobCard.job_card_number }}
-                  </code>
-
-                  <p class="mt-2 text-xs text-base-content/50">
+                <div class="flex items-center">
+                  <p class="text-xs text-gray-content/50">
                     #{{ jobCard.id }}
                   </p>
+                  <code class="rounded bg-gray-200 px-2 text-sm font-semibold">
+                    {{ jobCard.job_card_number }}
+                  </code>
                 </div>
               </td>
 
@@ -628,13 +627,13 @@ onMounted(() => {
                   </p>
 
                   <div class="mt-1 flex flex-wrap items-center gap-2">
-                    <code class="text-xs text-base-content/60">
+                    <code class="text-xs text-gray-content/60">
                       {{ jobCard.vehicle.registration_number }}
                     </code>
 
                     <span
                       v-if="jobCard.vehicle.variant"
-                      class="text-xs text-base-content/40"
+                      class="text-xs text-gray-content/40"
                     >
                       {{ jobCard.vehicle.variant }}
                     </span>
@@ -643,7 +642,7 @@ onMounted(() => {
 
                 <span
                   v-else
-                  class="text-base-content/40"
+                  class="text-gray-content/40"
                 >
                   —
                 </span>
@@ -659,18 +658,18 @@ onMounted(() => {
                     {{ jobCard.customer.name }}
                   </p>
 
-                  <p class="text-xs text-base-content/50">
+                  <p class="text-xs text-gray-content/50">
                     {{ jobCard.customer.customer_code }}
                   </p>
 
-                  <p class="text-xs text-base-content/50">
+                  <p class="text-xs text-gray-content/50">
                     {{ jobCard.customer.phone }}
                   </p>
                 </div>
 
                 <span
                   v-else
-                  class="text-base-content/40"
+                  class="text-gray-content/40"
                 >
                   —
                 </span>
@@ -688,7 +687,7 @@ onMounted(() => {
 
                   <p
                     v-if="jobCard.bay"
-                    class="mt-1 text-xs text-base-content/50"
+                    class="mt-1 text-xs text-gray-content/50"
                   >
                     {{ jobCard.bay.name }}
                     <span v-if="jobCard.bay.code">
@@ -698,7 +697,7 @@ onMounted(() => {
 
                   <p
                     v-else
-                    class="mt-1 text-xs text-base-content/40"
+                    class="mt-1 text-xs text-gray-content/40"
                   >
                     Bay not assigned
                   </p>
@@ -805,7 +804,7 @@ onMounted(() => {
       class="modal"
       :class="{ 'modal-open': showStatusModal }"
     >
-      <div class="modal-box border border-base-300 bg-base-100">
+      <div class="modal-box border border-gray-300 bg-gray-100">
         <div class="flex items-start gap-4">
           <div
             class="flex size-12 shrink-0 items-center justify-center rounded-full"
@@ -834,7 +833,7 @@ onMounted(() => {
               }}
             </h3>
 
-            <p class="mt-2 text-sm text-base-content/60">
+            <p class="mt-2 text-sm text-gray-content/60">
               Are you sure you want to
               {{
                 selectedJobCard?.is_active
@@ -849,7 +848,7 @@ onMounted(() => {
         <!-- Job Card Info -->
         <div
           v-if="selectedJobCard"
-          class="mt-5 rounded-lg border border-base-300 bg-base-200 p-4"
+          class="mt-5 rounded-lg border border-gray-300 bg-gray-200 p-4"
         >
           <div class="flex items-center gap-3">
             <div class="flex size-10 items-center justify-center rounded-lg bg-primary/10">
@@ -864,7 +863,7 @@ onMounted(() => {
                 {{ selectedJobCard.job_card_number }}
               </p>
 
-              <p class="text-sm text-base-content/60">
+              <p class="text-sm text-gray-content/60">
                 {{
                   selectedJobCard.vehicle?.registration_number ||
                   'Vehicle unavailable'

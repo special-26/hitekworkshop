@@ -149,6 +149,54 @@ interface JobCardPart {
   }
 }
 
+interface JobCardEstimateItem {
+  id: number
+  job_card_estimate_id: number
+  item_type: 'labour' | 'part'
+  description: string
+  quantity: string | number
+  unit_price: string | number
+  discount: string | number
+  total: string | number
+}
+
+interface JobCardEstimate {
+  id: number
+  job_card_id: number
+  estimate_number: string
+  subtotal: string | number
+  discount: string | number
+  tax: string | number
+  total: string | number
+  status: string
+  created_by: string | number | null
+  items: JobCardEstimateItem[]
+}
+
+interface JobCardInvoiceItem {
+  id: number
+  job_card_invoice_id: number
+  item_type: 'labour' | 'part'
+  description: string
+  quantity: string | number
+  unit_price: string | number
+  discount: string | number
+  total: string | number
+}
+
+interface JobCardInvoice {
+  id: number
+  job_card_id: number
+  invoice_number: string
+  subtotal: string | number
+  discount: string | number
+  tax: string | number
+  total: string | number
+  status: string
+  created_by: string | number | null
+  items: JobCardInvoiceItem[]
+}
+
 
 const route = useRoute()
 const router = useRouter()
@@ -189,6 +237,468 @@ const taskError = ref('')
 const parts = ref<JobCardPart[]>([])
 const partsLoading = ref(false)
 const partsError = ref('')
+
+// Estimated Bill
+const estimate = ref<JobCardEstimate | null>(null)
+const estimateLoading = ref(false)
+const estimateSaving = ref(false)
+const estimateError = ref('')
+
+const estimateItems = ref<JobCardEstimateItem[]>([])
+
+const estimateForm = reactive({
+  discount: '0',
+  tax: '0',
+})
+
+const newEstimateItem = reactive({
+  item_type: 'labour' as 'labour' | 'part',
+  description: '',
+  quantity: '1',
+  unit_price: '',
+  discount: '0',
+})
+
+const estimateItemTotal = (
+  item: {
+    quantity: string | number
+    unit_price: string | number
+    discount: string | number
+  }
+) => {
+  const quantity = Number(item.quantity) || 0
+  const unitPrice = Number(item.unit_price) || 0
+  const discount = Number(item.discount) || 0
+
+  return Math.max(
+    0,
+    quantity * unitPrice - discount
+  )
+}
+
+const estimateSubtotal = computed(() => {
+  return estimateItems.value.reduce(
+    (sum, item) => sum + estimateItemTotal(item),
+    0
+  )
+})
+
+const estimateDiscount = computed(() => {
+  return Math.max(
+    0,
+    Number(estimateForm.discount) || 0
+  )
+})
+
+const estimateTax = computed(() => {
+  return Math.max(
+    0,
+    Number(estimateForm.tax) || 0
+  )
+})
+
+const estimateTotal = computed(() => {
+  return Math.max(
+    0,
+    estimateSubtotal.value -
+      estimateDiscount.value +
+      estimateTax.value
+  )
+})
+
+const addEstimateItem = () => {
+  if (!newEstimateItem.description.trim()) {
+    estimateError.value = 'Please enter an item description.'
+    return
+  }
+
+  if (
+    !newEstimateItem.quantity ||
+    Number(newEstimateItem.quantity) <= 0
+  ) {
+    estimateError.value = 'Quantity must be greater than 0.'
+    return
+  }
+
+  if (
+    newEstimateItem.unit_price === '' ||
+    Number(newEstimateItem.unit_price) < 0
+  ) {
+    estimateError.value = 'Please enter a valid unit price.'
+    return
+  }
+
+  estimateError.value = ''
+
+  estimateItems.value.push({
+    id: Date.now(),
+    job_card_estimate_id: estimate.value?.id || 0,
+    item_type: newEstimateItem.item_type,
+    description: newEstimateItem.description.trim(),
+    quantity: Number(newEstimateItem.quantity),
+    unit_price: Number(newEstimateItem.unit_price),
+    discount: Number(newEstimateItem.discount) || 0,
+    total: estimateItemTotal(newEstimateItem),
+  })
+
+  newEstimateItem.item_type = 'labour'
+  newEstimateItem.description = ''
+  newEstimateItem.quantity = '1'
+  newEstimateItem.unit_price = ''
+  newEstimateItem.discount = '0'
+}
+
+const removeEstimateItem = (index: number) => {
+  estimateItems.value.splice(index, 1)
+}
+
+const saveEstimate = async () => {
+  console.log('SAVE ESTIMATE CLICKED')
+
+  if (!jobCard.value) {
+    console.log('NO JOB CARD')
+    estimateError.value = 'Job card not loaded.'
+    return
+  }
+
+  if (estimateItems.value.length === 0) {
+    console.log('NO ESTIMATE ITEMS')
+    estimateError.value = 'Please add at least one estimate item.'
+    return
+  }
+
+  const payload = {
+    items: estimateItems.value.map(item => ({
+      item_type: item.item_type,
+      description: item.description,
+      quantity: Number(item.quantity),
+      unit_price: Number(item.unit_price),
+      discount: Number(item.discount) || 0,
+    })),
+
+    discount: estimateDiscount.value,
+    tax: estimateTax.value,
+  }
+
+  console.log('ESTIMATE PAYLOAD:', payload)
+
+  estimateSaving.value = true
+  estimateError.value = ''
+
+  try {
+    const url = `/api/admin/job-cards/${jobCard.value.id}/estimate`
+
+    console.log('POST URL:', url)
+
+    const response = await api(url, {
+      method: 'POST',
+      body: payload,
+    })
+
+    console.log('SAVE ESTIMATE RESPONSE:', response)
+
+    estimate.value = response.data
+
+    estimateItems.value = [
+      ...estimate.value.items,
+    ]
+
+    estimateForm.discount = String(
+      estimate.value.discount ?? 0
+    )
+
+    estimateForm.tax = String(
+      estimate.value.tax ?? 0
+    )
+
+    console.log('ESTIMATE SAVED SUCCESSFULLY')
+
+  } catch (err: any) {
+    console.error('SAVE ESTIMATE ERROR:', err)
+
+    console.error(
+      'ERROR DATA:',
+      err?.data
+    )
+
+    console.error(
+      'ERROR RESPONSE:',
+      err?.response?._data
+    )
+
+    estimateError.value =
+      err?.data?.message ||
+      err?.response?._data?.message ||
+      err?.message ||
+      'Unable to save estimated bill.'
+
+  } finally {
+    estimateSaving.value = false
+  }
+}
+// Estimated Bill Ends
+// Final Bill
+const invoice = ref<JobCardInvoice | null>(null)
+const invoiceLoading = ref(false)
+const invoiceSaving = ref(false)
+const invoiceError = ref('')
+
+const invoiceItems = ref<JobCardInvoiceItem[]>([])
+
+const invoiceForm = reactive({
+  discount: '0',
+  tax: '0',
+})
+
+const newInvoiceItem = reactive({
+  item_type: 'labour' as 'labour' | 'part',
+  description: '',
+  quantity: '1',
+  unit_price: '',
+  discount: '0',
+})
+const invoiceItemTotal = (
+  item: {
+    quantity: string | number
+    unit_price: string | number
+    discount: string | number
+  }
+) => {
+  const quantity = Number(item.quantity) || 0
+  const unitPrice = Number(item.unit_price) || 0
+  const discount = Number(item.discount) || 0
+
+  return Math.max(
+    0,
+    quantity * unitPrice - discount
+  )
+}
+
+const invoiceSubtotal = computed(() => {
+  return invoiceItems.value.reduce(
+    (sum, item) => sum + invoiceItemTotal(item),
+    0
+  )
+})
+
+const invoiceDiscount = computed(() => {
+  return Math.max(
+    0,
+    Number(invoiceForm.discount) || 0
+  )
+})
+
+const invoiceTax = computed(() => {
+  return Math.max(
+    0,
+    Number(invoiceForm.tax) || 0
+  )
+})
+
+const invoiceTotal = computed(() => {
+  return Math.max(
+    0,
+    invoiceSubtotal.value -
+      invoiceDiscount.value +
+      invoiceTax.value
+  )
+})
+const addInvoiceItem = () => {
+  if (!newInvoiceItem.description.trim()) {
+    invoiceError.value =
+      'Please enter an item description.'
+
+    return
+  }
+
+  if (
+    !newInvoiceItem.quantity ||
+    Number(newInvoiceItem.quantity) <= 0
+  ) {
+    invoiceError.value =
+      'Quantity must be greater than 0.'
+
+    return
+  }
+
+  if (
+    newInvoiceItem.unit_price === '' ||
+    Number(newInvoiceItem.unit_price) < 0
+  ) {
+    invoiceError.value =
+      'Please enter a valid unit price.'
+
+    return
+  }
+
+  invoiceError.value = ''
+
+  invoiceItems.value.push({
+    id: Date.now(),
+
+    job_card_invoice_id:
+      invoice.value?.id || 0,
+
+    item_type:
+      newInvoiceItem.item_type,
+
+    description:
+      newInvoiceItem.description.trim(),
+
+    quantity:
+      Number(newInvoiceItem.quantity),
+
+    unit_price:
+      Number(newInvoiceItem.unit_price),
+
+    discount:
+      Number(newInvoiceItem.discount) || 0,
+
+    total:
+      invoiceItemTotal(newInvoiceItem),
+  })
+
+  newInvoiceItem.item_type = 'labour'
+  newInvoiceItem.description = ''
+  newInvoiceItem.quantity = '1'
+  newInvoiceItem.unit_price = ''
+  newInvoiceItem.discount = '0'
+}
+
+const saveInvoice = async () => {
+  console.log('SAVE FINAL BILL CLICKED')
+
+  if (!jobCard.value) {
+    invoiceError.value =
+      'Job card not loaded.'
+
+    return
+  }
+
+  if (invoiceItems.value.length === 0) {
+    invoiceError.value =
+      'Please add at least one final bill item.'
+
+    return
+  }
+
+  invoiceSaving.value = true
+  invoiceError.value = ''
+
+  try {
+    const response = await api(
+      `/api/admin/job-cards/${jobCard.value.id}/invoice`,
+      {
+        method: 'POST',
+
+        body: {
+          items: invoiceItems.value.map(item => ({
+            item_type: item.item_type,
+            description: item.description,
+            quantity: Number(item.quantity),
+            unit_price: Number(item.unit_price),
+            discount: Number(item.discount) || 0,
+          })),
+
+          discount: invoiceDiscount.value,
+          tax: invoiceTax.value,
+        },
+      }
+    )
+
+    console.log(
+      'FINAL BILL SAVED:',
+      response
+    )
+
+    invoice.value = response.data
+
+    invoiceItems.value = [
+      ...invoice.value.items,
+    ]
+
+    invoiceForm.discount = String(
+      invoice.value.discount ?? 0
+    )
+
+    invoiceForm.tax = String(
+      invoice.value.tax ?? 0
+    )
+
+  } catch (err: any) {
+    console.error(
+      'SAVE FINAL BILL ERROR:',
+      err
+    )
+
+    invoiceError.value =
+      err?.data?.message ||
+      err?.response?._data?.message ||
+      err?.message ||
+      'Unable to save final bill.'
+
+  } finally {
+    invoiceSaving.value = false
+  }
+}
+const invoiceGenerating = ref(false)
+const generateInvoice = async () => {
+  if (!jobCard.value) {
+    invoiceError.value = 'Job card not loaded.'
+    return
+  }
+
+  invoiceGenerating.value = true
+  invoiceError.value = ''
+
+  try {
+    const response = await api(
+      `/api/admin/job-cards/${jobCard.value.id}/invoice/generate`,
+      {
+        method: 'POST',
+      }
+    )
+
+    const generated = response.data
+
+    invoiceItems.value = (generated.items || []).map(
+      (item: any, index: number) => ({
+        id: Date.now() + index,
+        job_card_invoice_id: invoice.value?.id || 0,
+        item_type: item.item_type,
+        description: item.description,
+        quantity: item.quantity,
+        unit_price: item.unit_price,
+        discount: item.discount,
+        total: item.total,
+      })
+    )
+
+    invoiceForm.discount = String(
+      generated.discount ?? 0
+    )
+
+    invoiceForm.tax = String(
+      generated.tax ?? 0
+    )
+
+  } catch (err: any) {
+    console.error(
+      'GENERATE FINAL BILL ERROR:',
+      err
+    )
+
+    invoiceError.value =
+      err?.data?.message ||
+      err?.response?._data?.message ||
+      err?.message ||
+      'Unable to generate final bill.'
+
+  } finally {
+    invoiceGenerating.value = false
+  }
+}
+// Final Bill Ends
 
 const availableParts = ref<any[]>([])
 const partsModalOpen = ref(false)
@@ -524,6 +1034,94 @@ const fetchParts = async () => {
   }
 }
 
+const fetchEstimate = async () => {
+  if (!jobCard.value) {
+    return
+  }
+
+  estimateLoading.value = true
+  estimateError.value = ''
+
+  try {
+    const response = await api(
+      `/api/admin/job-cards/${jobCard.value.id}/estimate`
+    )
+
+    estimate.value = response.data || null
+
+    if (estimate.value) {
+      estimateItems.value = [...estimate.value.items]
+
+      estimateForm.discount = String(
+        estimate.value.discount ?? 0
+      )
+
+      estimateForm.tax = String(
+        estimate.value.tax ?? 0
+      )
+    } else {
+      estimateItems.value = []
+
+      estimateForm.discount = '0'
+      estimateForm.tax = '0'
+    }
+  } catch (err: any) {
+    console.error(err)
+
+    estimateError.value =
+      err?.data?.message ||
+      err?.response?._data?.message ||
+      'Unable to load estimated bill.'
+  } finally {
+    estimateLoading.value = false
+  }
+}
+
+const fetchInvoice = async () => {
+  if (!jobCard.value) {
+    return
+  }
+
+  invoiceLoading.value = true
+  invoiceError.value = ''
+
+  try {
+    const response = await api(
+      `/api/admin/job-cards/${jobCard.value.id}/invoice`
+    )
+
+    invoice.value = response.data || null
+
+    if (invoice.value) {
+      invoiceItems.value = [
+        ...invoice.value.items,
+      ]
+
+      invoiceForm.discount = String(
+        invoice.value.discount ?? 0
+      )
+
+      invoiceForm.tax = String(
+        invoice.value.tax ?? 0
+      )
+    } else {
+      invoiceItems.value = []
+
+      invoiceForm.discount = '0'
+      invoiceForm.tax = '0'
+    }
+  } catch (err: any) {
+    console.error(err)
+
+    invoiceError.value =
+      err?.data?.message ||
+      err?.response?._data?.message ||
+      'Unable to load final bill.'
+  } finally {
+    invoiceLoading.value = false
+  }
+}
+
 const resetTaskForm = () => {
   taskForm.department_id =
     jobCard.value?.department_id
@@ -854,6 +1452,8 @@ const fetchJobCard = async () => {
     await Promise.all([
       fetchTasks(),
       fetchParts(),
+      fetchEstimate(),
+      fetchInvoice(),
     ])
 
   } catch (err: any) {
@@ -1271,11 +1871,11 @@ onMounted(async () => {
 
       <div class="mt-3 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h1 class="text-2xl font-bold text-base-content">
+          <h1 class="text-2xl font-bold text-gray-content">
             Job Card Details
           </h1>
 
-          <p class="mt-1 text-sm text-base-content/60">
+          <p class="mt-1 text-sm text-gray-content/60">
             View job card, vehicle and workshop information.
           </p>
         </div>
@@ -1353,12 +1953,12 @@ onMounted(async () => {
     <!-- Loading -->
     <div
       v-if="loading"
-      class="card border border-base-300 bg-base-100 shadow-sm"
+      class="card border border-gray-300 bg-gray-100 shadow-xl"
     >
       <div class="card-body flex items-center justify-center py-20">
         <span class="loading loading-spinner loading-lg" />
 
-        <p class="mt-3 text-sm text-base-content/60">
+        <p class="mt-3 text-sm text-gray-content/60">
           Loading job card details...
         </p>
       </div>
@@ -1369,7 +1969,7 @@ onMounted(async () => {
       <!-- Top Overview -->
       <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <!-- Main -->
-        <div class="card border border-base-300 bg-base-100 shadow-sm lg:col-span-2">
+        <div class="card border border-gray-300 bg-gray-100 shadow-xl lg:col-span-2">
           <div class="card-body">
             <!-- Job Card Header -->
             <div class="flex items-start gap-4">
@@ -1417,7 +2017,7 @@ onMounted(async () => {
                   </span>
                 </div>
 
-                <p class="mt-1 text-sm text-base-content/50">
+                <p class="mt-1 text-sm text-gray-content/50">
                   Job Card #{{ jobCard.id }}
                 </p>
               </div>
@@ -1429,7 +2029,7 @@ onMounted(async () => {
             <div>
               <div class="flex items-center justify-between gap-4">
                 <div>
-                  <p class="text-xs uppercase tracking-wide text-base-content/50">
+                  <p class="text-xs uppercase tracking-wide text-gray-200">
                     Vehicle
                   </p>
 
@@ -1458,8 +2058,8 @@ onMounted(async () => {
                 v-if="jobCard.vehicle"
                 class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3"
               >
-                <div class="rounded-lg bg-base-200 p-4">
-                  <p class="text-xs text-base-content/50">
+                <div class="rounded-lg bg-gray-200 p-4">
+                  <p class="text-xs text-gray-content/50">
                     Registration
                   </p>
 
@@ -1468,8 +2068,8 @@ onMounted(async () => {
                   </code>
                 </div>
 
-                <div class="rounded-lg bg-base-200 p-4">
-                  <p class="text-xs text-base-content/50">
+                <div class="rounded-lg bg-gray-200 p-4">
+                  <p class="text-xs text-gray-content/50">
                     Variant
                   </p>
 
@@ -1478,8 +2078,8 @@ onMounted(async () => {
                   </p>
                 </div>
 
-                <div class="rounded-lg bg-base-200 p-4">
-                  <p class="text-xs text-base-content/50">
+                <div class="rounded-lg bg-gray-200 p-4">
+                  <p class="text-xs text-gray-content/50">
                     Fuel Type
                   </p>
 
@@ -1494,11 +2094,11 @@ onMounted(async () => {
 
             <!-- Complaint -->
             <div>
-              <p class="text-xs uppercase tracking-wide text-base-content/50">
+              <p class="text-xs uppercase tracking-wide text-gray-content/50">
                 Customer Complaint / Requested Work
               </p>
 
-              <div class="mt-3 rounded-lg border border-base-300 bg-base-200 p-5">
+              <div class="mt-3 rounded-lg border border-gray-300 bg-gray-200 p-5">
                 <p class="whitespace-pre-line text-sm leading-6">
                   {{ jobCard.complaint }}
                 </p>
@@ -1510,11 +2110,11 @@ onMounted(async () => {
               v-if="jobCard.customer_notes"
               class="mt-5"
             >
-              <p class="text-xs uppercase tracking-wide text-base-content/50">
+              <p class="text-xs uppercase tracking-wide text-gray-content/50">
                 Customer Notes
               </p>
 
-              <div class="mt-3 rounded-lg border border-base-300 bg-base-200 p-5">
+              <div class="mt-3 rounded-lg border border-gray-300 bg-gray-200 p-5">
                 <p class="whitespace-pre-line text-sm leading-6">
                   {{ jobCard.customer_notes }}
                 </p>
@@ -1524,7 +2124,7 @@ onMounted(async () => {
         </div>
 
         <!-- Workflow -->
-        <div class="card border border-base-300 bg-base-100 shadow-sm">
+        <div class="card border border-gray-300 bg-gray-100 shadow-xl">
           <div class="card-body">
             <div class="flex items-center justify-between">
               <div>
@@ -1532,14 +2132,14 @@ onMounted(async () => {
                   Workflow Status
                 </h2>
 
-                <p class="mt-1 text-xs text-base-content/50">
+                <p class="mt-1 text-xs text-gray-content/50">
                   Update the progress of this job card.
                 </p>
               </div>
 
               <Icon
                 name="lucide:activity"
-                class="size-5 text-base-content/50"
+                class="size-5 text-gray-content/50"
               />
             </div>
 
@@ -1555,8 +2155,8 @@ onMounted(async () => {
                   isCurrentWorkflowStatus(status.value)
                     ? 'border-primary bg-primary/10'
                     : isWorkflowStatusAllowed(status.value)
-                      ? 'border-base-300 bg-base-200'
-                      : 'border-base-300/50 bg-base-200/40 opacity-50'
+                      ? 'border-gray-300 bg-gray-200'
+                      : 'border-gray-300/50 bg-gray-200/40 opacity-50'
                 "
               >
                 <div class="flex items-center gap-3">
@@ -1567,8 +2167,8 @@ onMounted(async () => {
                       isCurrentWorkflowStatus(status.value)
                         ? 'bg-primary text-primary-content'
                         : isWorkflowStatusAllowed(status.value)
-                          ? 'bg-base-300 text-base-content'
-                          : 'bg-base-300/50 text-base-content/30'
+                          ? 'bg-gray-300 text-gray-content'
+                          : 'bg-gray-300/50 text-gray-content/30'
                     "
                   >
                     <Icon
@@ -1590,7 +2190,7 @@ onMounted(async () => {
                       {{ status.label }}
                     </p>
 
-                    <p class="mt-0.5 text-xs text-base-content/50">
+                    <p class="mt-0.5 text-xs text-gray-content/50">
                       {{ status.description }}
                     </p>
                   </div>
@@ -1642,7 +2242,7 @@ onMounted(async () => {
             <!-- No Permission -->
             <div
               v-else
-              class="mt-5 rounded-lg border border-base-300 bg-base-200 p-4 text-sm text-base-content/60"
+              class="mt-5 rounded-lg border border-gray-300 bg-gray-200 p-4 text-sm text-gray-content/60"
             >
               You do not have permission to update workflow status.
             </div>
@@ -1700,7 +2300,7 @@ onMounted(async () => {
       <!-- Customer + Workshop -->
       <div class="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
         <!-- Customer -->
-        <div class="card border border-base-300 bg-base-100 shadow-sm">
+        <div class="card border border-gray-300 bg-gray-100 shadow-xl">
           <div class="card-body">
             <div class="flex items-center justify-between gap-4">
               <div>
@@ -1708,7 +2308,7 @@ onMounted(async () => {
                   Customer
                 </h2>
 
-                <p class="text-sm text-base-content/60">
+                <p class="text-sm text-gray-content/60">
                   Customer associated with this job card.
                 </p>
               </div>
@@ -1730,7 +2330,7 @@ onMounted(async () => {
 
             <div
               v-if="jobCard.customer"
-              class="mt-5 rounded-lg border border-base-300 bg-base-200 p-5"
+              class="mt-5 rounded-lg border border-gray-300 bg-gray-200 p-5"
             >
               <div class="flex items-center gap-4">
                 <div class="flex size-11 shrink-0 items-center justify-center rounded-lg bg-primary/10">
@@ -1745,7 +2345,7 @@ onMounted(async () => {
                     {{ jobCard.customer.name }}
                   </p>
 
-                  <div class="mt-1 flex flex-wrap gap-3 text-sm text-base-content/60">
+                  <div class="mt-1 flex flex-wrap gap-3 text-sm text-gray-content/60">
                     <span>
                       {{ jobCard.customer.customer_code }}
                     </span>
@@ -1757,7 +2357,7 @@ onMounted(async () => {
 
                   <p
                     v-if="jobCard.customer.email"
-                    class="mt-1 text-sm text-base-content/60"
+                    class="mt-1 text-sm text-gray-content/60"
                   >
                     {{ jobCard.customer.email }}
                   </p>
@@ -1767,7 +2367,7 @@ onMounted(async () => {
 
             <div
               v-else
-              class="mt-5 rounded-lg border border-base-300 bg-base-200 p-5 text-sm text-base-content/60"
+              class="mt-5 rounded-lg border border-gray-300 bg-gray-200 p-5 text-sm text-gray-content/60"
             >
               Customer information is not available.
             </div>
@@ -1775,22 +2375,22 @@ onMounted(async () => {
         </div>
 
         <!-- Workshop Assignment -->
-        <div class="card border border-base-300 bg-base-100 shadow-sm">
+        <div class="card border border-gray-300 bg-gray-100 shadow-xl">
           <div class="card-body">
             <div>
               <h2 class="text-lg font-semibold">
                 Workshop Assignment
               </h2>
 
-              <p class="text-sm text-base-content/60">
+              <p class="text-sm text-gray-content/60">
                 Department, bay and advisor assigned to this job.
               </p>
             </div>
 
             <div class="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-3">
               <!-- Department -->
-              <div class="rounded-lg border border-base-300 bg-base-200 p-4">
-                <p class="text-xs text-base-content/50">
+              <div class="rounded-lg border border-gray-300 bg-gray-200 p-4">
+                <p class="text-xs text-gray-content/50">
                   Department
                 </p>
 
@@ -1800,8 +2400,8 @@ onMounted(async () => {
               </div>
 
               <!-- Bay -->
-              <div class="rounded-lg border border-base-300 bg-base-200 p-4">
-                <p class="text-xs text-base-content/50">
+              <div class="rounded-lg border border-gray-300 bg-gray-200 p-4">
+                <p class="text-xs text-gray-content/50">
                   Bay
                 </p>
 
@@ -1811,15 +2411,15 @@ onMounted(async () => {
 
                 <p
                   v-if="jobCard.bay?.code"
-                  class="mt-1 text-xs text-base-content/50"
+                  class="mt-1 text-xs text-gray-content/50"
                 >
                   {{ jobCard.bay.code }}
                 </p>
               </div>
 
               <!-- Advisor -->
-              <div class="rounded-lg border border-base-300 bg-base-200 p-4">
-                <p class="text-xs text-base-content/50">
+              <div class="rounded-lg border border-gray-300 bg-gray-200 p-4">
+                <p class="text-xs text-gray-content/50">
                   Advisor
                 </p>
 
@@ -1832,71 +2432,949 @@ onMounted(async () => {
         </div>
       </div>
 
-      <!-- Estimate -->
-      <div class="card mt-6 border border-base-300 bg-base-100 shadow-sm">
+      <!-- Estimate Bill -->
+      <div class="card mt-6 border border-gray-300 bg-gray-100 shadow-xl">
         <div class="card-body">
-          <div>
-            <h2 class="text-lg font-semibold">
-              Estimate
-            </h2>
+          <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 class="card-title">
+                Estimated Bill
+              </h2>
 
-            <p class="text-sm text-base-content/60">
-              Estimated cost and completion information.
-            </p>
+              <p class="text-sm text-gray-content/60">
+                Prepare and save the estimated bill for this job card.
+              </p>
+            </div>
+
+            <div
+              v-if="estimate"
+              class="badge badge-outline"
+            >
+              {{ estimate.estimate_number }}
+            </div>
           </div>
 
-          <div class="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div class="rounded-lg border border-base-300 bg-base-200 p-5">
-              <div class="flex items-center gap-3">
-                <div class="flex size-10 items-center justify-center rounded-lg bg-primary/10">
-                  <Icon
-                    name="lucide:indian-rupee"
-                    class="size-5 text-primary"
+          <!-- Loading -->
+          <div
+            v-if="estimateLoading"
+            class="flex justify-center py-8"
+          >
+            <span class="loading loading-spinner loading-md"></span>
+          </div>
+
+          <template v-else>
+            <!-- Error -->
+            <div
+              v-if="estimateError"
+              class="alert alert-error mt-4"
+            >
+              <span>{{ estimateError }}</span>
+            </div>
+
+            <!-- Add Estimate Item -->
+            <div class="mt-5 rounded-lg border border-gray-300 bg-gray-100 p-4">
+              <h3 class="font-semibold">
+                Add Estimate Item
+              </h3>
+
+              <div class="mt-4 grid grid-cols-1 gap-3 md:grid-cols-12">
+
+                <!-- Type -->
+                <div class="md:col-span-2">
+                  <label class="label">
+                    <span class="label-text">Type</span>
+                  </label>
+
+                  <select
+                    v-model="newEstimateItem.item_type"
+                    class="select select-bordered w-full"
+                  >
+                    <option value="labour">
+                      Labour
+                    </option>
+
+                    <option value="part">
+                      Part
+                    </option>
+                  </select>
+                </div>
+
+                <!-- Description -->
+                <div class="md:col-span-4">
+                  <label class="label">
+                    <span class="label-text">Description</span>
+                  </label>
+
+                  <input
+                    v-model="newEstimateItem.description"
+                    type="text"
+                    class="input input-bordered w-full"
+                    placeholder="e.g. Engine oil change"
+                    @keyup.enter="addEstimateItem"
                   />
                 </div>
 
-                <div>
-                  <p class="text-xs text-base-content/50">
-                    Estimated Cost
-                  </p>
+                <!-- Quantity -->
+                <div class="md:col-span-1">
+                  <label class="label">
+                    <span class="label-text">Qty</span>
+                  </label>
 
-                  <p class="mt-1 text-lg font-bold">
-                    {{ formatCost(jobCard.estimated_cost) }}
-                  </p>
+                  <input
+                    v-model="newEstimateItem.quantity"
+                    type="number"
+                    min="0.01"
+                    step="0.01"
+                    class="input input-bordered w-full"
+                  />
+                </div>
+
+                <!-- Unit Price -->
+                <div class="md:col-span-2">
+                  <label class="label">
+                    <span class="label-text">Unit Price</span>
+                  </label>
+
+                  <input
+                    v-model="newEstimateItem.unit_price"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    class="input input-bordered w-full"
+                    placeholder="0.00"
+                  />
+                </div>
+
+                <!-- Discount -->
+                <div class="md:col-span-1">
+                  <label class="label">
+                    <span class="label-text">Discount</span>
+                  </label>
+
+                  <input
+                    v-model="newEstimateItem.discount"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    class="input input-bordered w-full"
+                    placeholder="0"
+                  />
+                </div>
+
+                <!-- Add -->
+                <div class="flex items-end md:col-span-2">
+                  <button
+                    type="button"
+                    class="btn btn-primary w-full"
+                    @click="addEstimateItem"
+                  >
+                    + Add Item
+                  </button>
                 </div>
               </div>
             </div>
 
-            <div class="rounded-lg border border-base-300 bg-base-200 p-5">
-              <div class="flex items-center gap-3">
-                <div class="flex size-10 items-center justify-center rounded-lg bg-primary/10">
-                  <Icon
-                    name="lucide:calendar-clock"
-                    class="size-5 text-primary"
+            <!-- Estimate Items -->
+            <div class="mt-5">
+              <div class="mb-3 flex items-center justify-between">
+                <h3 class="font-semibold">
+                  Estimate Items
+                </h3>
+
+                <span class="text-sm text-gray-content/60">
+                  {{ estimateItems.length }} item{{ estimateItems.length === 1 ? '' : 's' }}
+                </span>
+              </div>
+
+              <!-- Desktop table -->
+              <div
+                v-if="estimateItems.length"
+                class="hidden overflow-x-auto rounded-lg border border-gray-300 md:block"
+              >
+                <table class="table">
+                  <thead>
+                    <tr>
+                      <th>Type</th>
+                      <th>Description</th>
+                      <th class="w-24">Qty</th>
+                      <th class="w-32">Unit Price</th>
+                      <th class="w-32">Discount</th>
+                      <th class="text-right">Total</th>
+                    </tr>
+                  </thead>
+
+                  <tbody>
+                    <tr
+                      v-for="(item, index) in estimateItems"
+                      :key="item.id"
+                    >
+                      <td>
+                        <select
+                          v-model="item.item_type"
+                          class="select select-bordered select-sm w-full"
+                        >
+                          <option value="labour">
+                            Labour
+                          </option>
+
+                          <option value="part">
+                            Part
+                          </option>
+                        </select>
+                      </td>
+
+                      <td>
+                        <input
+                          v-model="item.description"
+                          type="text"
+                          class="input input-bordered input-sm w-full"
+                        />
+                      </td>
+
+                      <td>
+                        <input
+                          v-model="item.quantity"
+                          type="number"
+                          min="0.01"
+                          step="0.01"
+                          class="input input-bordered input-sm w-full"
+                        />
+                      </td>
+
+                      <td>
+                        <input
+                          v-model="item.unit_price"
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          class="input input-bordered input-sm w-full"
+                        />
+                      </td>
+
+                      <td>
+                        <input
+                          v-model="item.discount"
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          class="input input-bordered input-sm w-full"
+                        />
+                      </td>
+
+                      <td class="text-right font-semibold">
+                        ₹{{ estimateItemTotal(item).toFixed(2) }}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <!-- Mobile cards -->
+              <div
+                v-if="estimateItems.length"
+                class="space-y-3 md:hidden"
+              >
+                <div
+                  v-for="item in estimateItems"
+                  :key="item.id"
+                  class="rounded-lg border border-gray-300 bg-gray-100 p-4"
+                >
+                  <div class="grid grid-cols-2 gap-3">
+
+                    <div class="col-span-2">
+                      <label class="label">
+                        <span class="label-text">Type</span>
+                      </label>
+
+                      <select
+                        v-model="item.item_type"
+                        class="select select-bordered w-full"
+                      >
+                        <option value="labour">
+                          Labour
+                        </option>
+
+                        <option value="part">
+                          Part
+                        </option>
+                      </select>
+                    </div>
+
+                    <div class="col-span-2">
+                      <label class="label">
+                        <span class="label-text">Description</span>
+                      </label>
+
+                      <input
+                        v-model="item.description"
+                        type="text"
+                        class="input input-bordered w-full"
+                      />
+                    </div>
+
+                    <div>
+                      <label class="label">
+                        <span class="label-text">Qty</span>
+                      </label>
+
+                      <input
+                        v-model="item.quantity"
+                        type="number"
+                        min="0.01"
+                        step="0.01"
+                        class="input input-bordered w-full"
+                      />
+                    </div>
+
+                    <div>
+                      <label class="label">
+                        <span class="label-text">Unit Price</span>
+                      </label>
+
+                      <input
+                        v-model="item.unit_price"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        class="input input-bordered w-full"
+                      />
+                    </div>
+
+                    <div>
+                      <label class="label">
+                        <span class="label-text">Discount</span>
+                      </label>
+
+                      <input
+                        v-model="item.discount"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        class="input input-bordered w-full"
+                      />
+                    </div>
+
+                    <div class="flex items-end justify-end">
+                      <div class="text-right">
+                        <div class="text-xs text-gray-content/60">
+                          Total
+                        </div>
+
+                        <div class="font-bold">
+                          ₹{{ estimateItemTotal(item).toFixed(2) }}
+                        </div>
+                      </div>
+                    </div>
+
+                  </div>
+                </div>
+              </div>
+
+              <!-- Empty -->
+              <div
+                v-else
+                class="rounded-lg border border-dashed border-gray-300 py-8 text-center text-sm text-gray-content/60"
+              >
+                No estimate items added yet.
+              </div>
+            </div>
+
+            <!-- Estimate Summary -->
+            <div class="mt-5 flex justify-end">
+              <div class="w-full max-w-md rounded-lg border border-gray-300 bg-gray-100 p-4">
+
+                <div class="flex justify-between py-1">
+                  <span class="text-gray-content/70">
+                    Subtotal
+                  </span>
+
+                  <span class="font-medium">
+                    ₹{{ estimateSubtotal.toFixed(2) }}
+                  </span>
+                </div>
+
+                <div class="flex items-center justify-between gap-4 py-2">
+                  <span class="text-gray-content/70">
+                    Overall Discount
+                  </span>
+
+                  <input
+                    v-model="estimateForm.discount"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    class="input input-bordered input-sm w-32 text-right"
                   />
                 </div>
 
-                <div>
-                  <p class="text-xs text-base-content/50">
-                    Estimated Completion
-                  </p>
+                <div class="flex items-center justify-between gap-4 py-2">
+                  <span class="text-gray-content/70">
+                    Tax
+                  </span>
 
-                  <p class="mt-1 font-medium">
-                    {{
-                      formatDate(
-                        jobCard.estimated_completion_at
-                      )
+                  <input
+                    v-model="estimateForm.tax"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    class="input input-bordered input-sm w-32 text-right"
+                  />
+                </div>
+
+                <div class="divider my-2"></div>
+
+                <div class="flex justify-between text-lg font-bold">
+                  <span>
+                    Estimated Total
+                  </span>
+
+                  <span>
+                    ₹{{ estimateTotal.toFixed(2) }}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Estimated Completion -->
+            <div class="mt-5 rounded-lg border border-gray-300 bg-gray-100 p-4">
+              <div class="text-sm text-gray-content/60">
+                Estimated Completion
+              </div>
+
+              <div class="mt-1 font-medium">
+                {{ jobCard?.estimated_completion_at || 'Not specified' }}
+              </div>
+            </div>
+
+            <!-- Save -->
+            <div class="mt-5 flex justify-end">
+              <button
+                type="button"
+                class="btn btn-primary"
+                :disabled="estimateSaving || estimateItems.length === 0"
+                @click="saveEstimate"
+              >
+                <span
+                  v-if="estimateSaving"
+                  class="loading loading-spinner loading-sm"
+                ></span>
+
+                {{ estimateSaving ? 'Saving...' : 'Save Estimated Bill' }}
+              </button>
+            </div>
+          </template>
+        </div>
+      </div>
+
+      <!-- Final Bill -->
+      <div class="card shadow-xl">
+        <div class="card-body">
+
+          <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 class="card-title">
+                Final Bill
+              </h2>
+
+              <p class="text-sm text-base-content/60">
+                Final amount based on the actual work and parts used.
+              </p>
+            </div>
+
+            <div class="flex items-center gap-2">
+              <div
+                v-if="invoice"
+                class="badge badge-outline"
+              >
+                {{ invoice.invoice_number }}
+              </div>
+
+              <button
+                type="button"
+                class="btn btn-outline btn-sm"
+                :disabled="invoiceGenerating"
+                @click="generateInvoice"
+              >
+                <span
+                  v-if="invoiceGenerating"
+                  class="loading loading-spinner loading-xs"
+                ></span>
+
+                {{
+                  invoiceGenerating
+                    ? 'Generating...'
+                    : 'Generate from Job Card'
+                }}
+              </button>
+            </div>
+          </div>
+
+          <!-- Loading -->
+          <div
+            v-if="invoiceLoading"
+            class="flex justify-center py-8"
+          >
+            <span class="loading loading-spinner loading-md"></span>
+          </div>
+
+          <template v-else>
+
+            <!-- Error -->
+            <div
+              v-if="invoiceError"
+              class="alert alert-error mt-4"
+            >
+              <span>{{ invoiceError }}</span>
+            </div>
+
+            <!-- Add Final Bill Item -->
+            <div class="mt-5 rounded-lg border border-gray-300 bg-gray-100 p-4">
+              <h3 class="font-semibold">
+                Add Final Bill Item
+              </h3>
+
+              <div class="mt-4 grid grid-cols-1 gap-3 md:grid-cols-12">
+
+                <!-- Type -->
+                <div class="md:col-span-2">
+                  <label class="label">
+                    <span class="label-text">Type</span>
+                  </label>
+
+                  <select
+                    v-model="newInvoiceItem.item_type"
+                    class="select select-bordered w-full"
+                  >
+                    <option value="labour">
+                      Labour
+                    </option>
+
+                    <option value="part">
+                      Part
+                    </option>
+                  </select>
+                </div>
+
+                <!-- Description -->
+                <div class="md:col-span-4">
+                  <label class="label">
+                    <span class="label-text">Description</span>
+                  </label>
+
+                  <input
+                    v-model="newInvoiceItem.description"
+                    type="text"
+                    class="input input-bordered w-full"
+                    placeholder="e.g. Engine oil change"
+                    @keyup.enter="addInvoiceItem"
+                  />
+                </div>
+
+                <!-- Quantity -->
+                <div class="md:col-span-1">
+                  <label class="label">
+                    <span class="label-text">Qty</span>
+                  </label>
+
+                  <input
+                    v-model="newInvoiceItem.quantity"
+                    type="number"
+                    min="0.01"
+                    step="0.01"
+                    class="input input-bordered w-full"
+                  />
+                </div>
+
+                <!-- Unit Price -->
+                <div class="md:col-span-2">
+                  <label class="label">
+                    <span class="label-text">Unit Price</span>
+                  </label>
+
+                  <input
+                    v-model="newInvoiceItem.unit_price"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    class="input input-bordered w-full"
+                    placeholder="0.00"
+                  />
+                </div>
+
+                <!-- Discount -->
+                <div class="md:col-span-1">
+                  <label class="label">
+                    <span class="label-text">Discount</span>
+                  </label>
+
+                  <input
+                    v-model="newInvoiceItem.discount"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    class="input input-bordered w-full"
+                    placeholder="0"
+                  />
+                </div>
+
+                <!-- Add -->
+                <div class="flex items-end md:col-span-2">
+                  <button
+                    type="button"
+                    class="btn btn-primary w-full"
+                    @click="addInvoiceItem"
+                  >
+                    + Add Item
+                  </button>
+                </div>
+
+              </div>
+            </div>
+
+            <!-- Invoice Items -->
+            <div class="mt-5">
+
+              <div class="mb-3 flex items-center justify-between">
+                <h3 class="font-semibold">
+                  Final Bill Items
+                </h3>
+
+                <span class="text-sm text-gray-content/60">
+                  {{ invoiceItems.length }}
+                  item{{ invoiceItems.length === 1 ? '' : 's' }}
+                </span>
+              </div>
+
+              <!-- Desktop -->
+              <div
+                v-if="invoiceItems.length"
+                class="hidden overflow-x-auto rounded-lg border border-gray-300 md:block"
+              >
+                <table class="table">
+                  <thead>
+                    <tr>
+                      <th>Type</th>
+                      <th>Description</th>
+                      <th class="w-24">Qty</th>
+                      <th class="w-32">Unit Price</th>
+                      <th class="w-32">Discount</th>
+                      <th class="text-right">Total</th>
+                    </tr>
+                  </thead>
+
+                  <tbody>
+                    <tr
+                      v-for="item in invoiceItems"
+                      :key="item.id"
+                    >
+                      <td>
+                        <select
+                          v-model="item.item_type"
+                          class="select select-bordered select-sm w-full"
+                        >
+                          <option value="labour">
+                            Labour
+                          </option>
+
+                          <option value="part">
+                            Part
+                          </option>
+                        </select>
+                      </td>
+
+                      <td>
+                        <input
+                          v-model="item.description"
+                          type="text"
+                          class="input input-bordered input-sm w-full"
+                        />
+                      </td>
+
+                      <td>
+                        <input
+                          v-model="item.quantity"
+                          type="number"
+                          min="0.01"
+                          step="0.01"
+                          class="input input-bordered input-sm w-full"
+                        />
+                      </td>
+
+                      <td>
+                        <input
+                          v-model="item.unit_price"
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          class="input input-bordered input-sm w-full"
+                        />
+                      </td>
+
+                      <td>
+                        <input
+                          v-model="item.discount"
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          class="input input-bordered input-sm w-full"
+                        />
+                      </td>
+
+                      <td class="text-right font-semibold">
+                        ₹{{ invoiceItemTotal(item).toFixed(2) }}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <!-- Mobile -->
+              <div
+                v-if="invoiceItems.length"
+                class="space-y-3 md:hidden"
+              >
+                <div
+                  v-for="item in invoiceItems"
+                  :key="item.id"
+                  class="rounded-lg border border-gray-300 bg-gray-100 p-4"
+                >
+                  <div class="grid grid-cols-2 gap-3">
+
+                    <div class="col-span-2">
+                      <label class="label">
+                        <span class="label-text">Type</span>
+                      </label>
+
+                      <select
+                        v-model="item.item_type"
+                        class="select select-bordered w-full"
+                      >
+                        <option value="labour">
+                          Labour
+                        </option>
+
+                        <option value="part">
+                          Part
+                        </option>
+                      </select>
+                    </div>
+
+                    <div class="col-span-2">
+                      <label class="label">
+                        <span class="label-text">Description</span>
+                      </label>
+
+                      <input
+                        v-model="item.description"
+                        type="text"
+                        class="input input-bordered w-full"
+                      />
+                    </div>
+
+                    <div>
+                      <label class="label">
+                        <span class="label-text">Qty</span>
+                      </label>
+
+                      <input
+                        v-model="item.quantity"
+                        type="number"
+                        min="0.01"
+                        step="0.01"
+                        class="input input-bordered w-full"
+                      />
+                    </div>
+
+                    <div>
+                      <label class="label">
+                        <span class="label-text">Unit Price</span>
+                      </label>
+
+                      <input
+                        v-model="item.unit_price"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        class="input input-bordered w-full"
+                      />
+                    </div>
+
+                    <div>
+                      <label class="label">
+                        <span class="label-text">Discount</span>
+                      </label>
+
+                      <input
+                        v-model="item.discount"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        class="input input-bordered w-full"
+                      />
+                    </div>
+
+                    <div class="flex items-end justify-end">
+                      <div class="text-right">
+                        <div class="text-xs text-gray-content/60">
+                          Total
+                        </div>
+
+                        <div class="font-bold">
+                          ₹{{ invoiceItemTotal(item).toFixed(2) }}
+                        </div>
+                      </div>
+                    </div>
+
+                  </div>
+                </div>
+              </div>
+
+              <!-- Empty -->
+              <div
+                v-else
+                class="rounded-lg border border-dashed border-gray-300 py-8 text-center text-sm text-gray-content/60"
+              >
+                No final bill items added yet.
+              </div>
+
+            </div>
+
+            <!-- Invoice Summary -->
+            <div class="mt-5 flex justify-end">
+              <div class="w-full max-w-md rounded-lg border border-gray-300 bg-gray-100 p-4">
+
+                <div class="flex justify-between py-1">
+                  <span class="text-gray-content/70">
+                    Subtotal
+                  </span>
+
+                  <span class="font-medium">
+                    ₹{{ invoiceSubtotal.toFixed(2) }}
+                  </span>
+                </div>
+
+                <div class="flex items-center justify-between gap-4 py-2">
+                  <span class="text-gray-content/70">
+                    Overall Discount
+                  </span>
+
+                  <input
+                    v-model="invoiceForm.discount"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    class="input input-bordered input-sm w-32 text-right"
+                  />
+                </div>
+
+                <div class="flex items-center justify-between gap-4 py-2">
+                  <span class="text-gray-content/70">
+                    Tax
+                  </span>
+
+                  <input
+                    v-model="invoiceForm.tax"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    class="input input-bordered input-sm w-32 text-right"
+                  />
+                </div>
+
+                <div class="divider my-2"></div>
+
+                <div class="flex justify-between text-lg font-bold">
+                  <span>
+                    Final Total
+                  </span>
+
+                  <span>
+                    ₹{{ invoiceTotal.toFixed(2) }}
+                  </span>
+                </div>
+
+              </div>
+            </div>
+
+            <!-- Estimated vs Final -->
+            <div
+              v-if="estimate"
+              class="mt-5 rounded-lg border border-gray-300 bg-gray-100 p-4"
+            >
+              <h3 class="font-semibold">
+                Estimate vs Final
+              </h3>
+
+              <div class="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
+
+                <div>
+                  <div class="text-sm text-gray-content/60">
+                    Estimated Bill
+                  </div>
+
+                  <div class="text-lg font-bold">
+                    ₹{{ Number(estimate.total).toFixed(2) }}
+                  </div>
+                </div>
+
+                <div>
+                  <div class="text-sm text-gray-content/60">
+                    Final Bill
+                  </div>
+
+                  <div class="text-lg font-bold">
+                    ₹{{ invoiceTotal.toFixed(2) }}
+                  </div>
+                </div>
+
+                <div>
+                  <div class="text-sm text-gray-content/60">
+                    Difference
+                  </div>
+
+                  <div class="text-lg font-bold">
+                    ₹{{
+                      (
+                        invoiceTotal -
+                        Number(estimate.total)
+                      ).toFixed(2)
                     }}
-                  </p>
+                  </div>
                 </div>
+
               </div>
             </div>
-          </div>
+
+            <!-- Save -->
+            <div class="mt-5 flex justify-end">
+              <button
+                type="button"
+                class="btn btn-primary"
+                :disabled="
+                  invoiceSaving ||
+                  invoiceItems.length === 0
+                "
+                @click="saveInvoice"
+              >
+                <span
+                  v-if="invoiceSaving"
+                  class="loading loading-spinner loading-sm"
+                ></span>
+
+                {{
+                  invoiceSaving
+                    ? 'Saving...'
+                    : 'Save Final Bill'
+                }}
+              </button>
+            </div>
+
+          </template>
         </div>
       </div>
 
       <!-- Tasks / Services -->
-      <div class="card mt-6 border border-base-300 bg-base-100 shadow-sm">
+      <div class="card mt-6 border border-gray-300 bg-gray-100 shadow-xl">
         <div class="card-body">
           <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
@@ -1904,7 +3382,7 @@ onMounted(async () => {
                 Tasks / Services
               </h2>
 
-              <p class="text-sm text-base-content/60">
+              <p class="text-sm text-gray-content/60">
                 Work items assigned to this job card.
               </p>
             </div>
@@ -1948,7 +3426,7 @@ onMounted(async () => {
           <!-- Empty -->
           <div
             v-else-if="tasks.length === 0"
-            class="mt-5 rounded-xl border border-dashed border-base-300 bg-base-200 p-10 text-center"
+            class="mt-5 rounded-xl border border-dashed border-gray-300 bg-gray-200 p-10 text-center"
           >
             <div class="mx-auto flex size-12 items-center justify-center rounded-xl bg-primary/10">
               <Icon
@@ -1961,7 +3439,7 @@ onMounted(async () => {
               No tasks added
             </h3>
 
-            <p class="mt-1 text-sm text-base-content/60">
+            <p class="mt-1 text-sm text-gray-content/60">
               Add the first task or service for this job card.
             </p>
 
@@ -1988,11 +3466,11 @@ onMounted(async () => {
             <div
               v-for="(task, index) in tasks"
               :key="task.id"
-              class="rounded-xl border border-base-300 bg-base-200 p-4"
+              class="rounded-xl border border-gray-300 bg-gray-200 p-4"
             >
               <div class="flex flex-col gap-4 lg:flex-row lg:items-start">
                 <!-- Number -->
-                <div class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-base-300 text-sm font-semibold">
+                <div class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-gray-300 text-sm font-semibold">
                   {{ index + 1 }}
                 </div>
 
@@ -2021,12 +3499,12 @@ onMounted(async () => {
 
                   <p
                     v-if="task.description"
-                    class="mt-2 whitespace-pre-line text-sm text-base-content/60"
+                    class="mt-2 whitespace-pre-line text-sm text-gray-content/60"
                   >
                     {{ task.description }}
                   </p>
 
-                  <div class="mt-3 flex flex-wrap gap-x-5 gap-y-2 text-xs text-base-content/50">
+                  <div class="mt-3 flex flex-wrap gap-x-5 gap-y-2 text-xs text-gray-content/50">
                     <span
                       v-if="task.department"
                       class="flex items-center gap-1.5"
@@ -2127,7 +3605,7 @@ onMounted(async () => {
 
                     <ul
                       tabindex="0"
-                      class="dropdown-content menu z-50 mt-2 w-48 rounded-box border border-base-300 bg-base-100 p-2 shadow-xl"
+                      class="dropdown-content menu z-50 mt-2 w-48 rounded-box border border-gray-300 bg-gray-100 p-2 shadow-xl"
                     >
                       <li
                         v-for="status in taskStatuses"
@@ -2168,7 +3646,7 @@ onMounted(async () => {
       </div>
 
       <!-- Parts -->
-      <div class="card mt-6 border border-base-300 bg-base-100 shadow-sm">
+      <div class="card mt-6 border border-gray-300 bg-gray-100 shadow-xl">
         <div class="card-body">
 
           <!-- Header -->
@@ -2178,7 +3656,7 @@ onMounted(async () => {
                 Parts
               </h2>
 
-              <p class="text-sm text-base-content/60">
+              <p class="text-sm text-gray-content/60">
                 Parts required and issued for this job card.
               </p>
             </div>
@@ -2224,7 +3702,7 @@ onMounted(async () => {
           <!-- Empty -->
           <div
             v-else-if="parts.length === 0"
-            class="mt-5 rounded-xl border border-dashed border-base-300 bg-base-200 p-10 text-center"
+            class="mt-5 rounded-xl border border-dashed border-gray-300 bg-gray-200 p-10 text-center"
           >
             <div
               class="mx-auto flex size-12 items-center justify-center rounded-xl bg-primary/10"
@@ -2239,7 +3717,7 @@ onMounted(async () => {
               No parts added
             </h3>
 
-            <p class="mt-1 text-sm text-base-content/60">
+            <p class="mt-1 text-sm text-gray-content/60">
               No parts have been added to this job card yet.
             </p>
           </div>
@@ -2252,13 +3730,13 @@ onMounted(async () => {
             <div
               v-for="(jobCardPart, index) in parts"
               :key="jobCardPart.id"
-              class="rounded-xl border border-base-300 bg-base-200 p-4"
+              class="rounded-xl border border-gray-300 bg-gray-200 p-4"
             >
               <div class="flex flex-col gap-4 lg:flex-row lg:items-start">
 
                 <!-- Number -->
                 <div
-                  class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-base-300 text-sm font-semibold"
+                  class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-gray-300 text-sm font-semibold"
                 >
                   {{ index + 1 }}
                 </div>
@@ -2283,7 +3761,7 @@ onMounted(async () => {
                   <!-- Part number / brand -->
                   <div
                     v-if="jobCardPart.part"
-                    class="mt-2 flex flex-wrap gap-x-5 gap-y-2 text-xs text-base-content/50"
+                    class="mt-2 flex flex-wrap gap-x-5 gap-y-2 text-xs text-gray-content/50"
                   >
                     <span class="flex items-center gap-1.5">
                       <Icon
@@ -2322,8 +3800,8 @@ onMounted(async () => {
                   <!-- Quantity / Price / Total -->
                   <div class="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
 
-                    <div class="rounded-lg bg-base-100 p-3">
-                      <p class="text-xs text-base-content/50">
+                    <div class="rounded-lg bg-gray-100 p-3">
+                      <p class="text-xs text-gray-content/50">
                         Quantity
                       </p>
 
@@ -2333,8 +3811,8 @@ onMounted(async () => {
                       </p>
                     </div>
 
-                    <div class="rounded-lg bg-base-100 p-3">
-                      <p class="text-xs text-base-content/50">
+                    <div class="rounded-lg bg-gray-100 p-3">
+                      <p class="text-xs text-gray-content/50">
                         Unit Price
                       </p>
 
@@ -2343,8 +3821,8 @@ onMounted(async () => {
                       </p>
                     </div>
 
-                    <div class="rounded-lg bg-base-100 p-3">
-                      <p class="text-xs text-base-content/50">
+                    <div class="rounded-lg bg-gray-100 p-3">
+                      <p class="text-xs text-gray-content/50">
                         Discount
                       </p>
 
@@ -2353,8 +3831,8 @@ onMounted(async () => {
                       </p>
                     </div>
 
-                    <div class="rounded-lg bg-base-100 p-3">
-                      <p class="text-xs text-base-content/50">
+                    <div class="rounded-lg bg-gray-100 p-3">
+                      <p class="text-xs text-gray-content/50">
                         Total
                       </p>
 
@@ -2455,7 +3933,7 @@ onMounted(async () => {
               }}
             </h3>
 
-            <p class="mt-1 text-sm text-base-content/60">
+            <p class="mt-1 text-sm text-gray-content/60">
               {{
                 editingTask
                   ? 'Update this job card task.'
@@ -2622,7 +4100,7 @@ onMounted(async () => {
             </legend>
 
             <label class="input input-bordered flex items-center gap-2">
-              <span class="text-base-content/50">
+              <span class="text-gray-content/50">
                 ₹
               </span>
 
@@ -2719,7 +4197,7 @@ onMounted(async () => {
               Add Part
             </h3>
 
-            <p class="mt-1 text-sm text-base-content/60">
+            <p class="mt-1 text-sm text-gray-content/60">
               Add a part to this job card.
             </p>
           </div>
@@ -2783,7 +4261,7 @@ onMounted(async () => {
 
             <p
               v-if="selectedPart"
-              class="mt-1 text-xs text-base-content/50"
+              class="mt-1 text-xs text-gray-content/50"
             >
               Stock:
               {{ selectedPart.current_stock }}
@@ -2865,7 +4343,7 @@ onMounted(async () => {
 
           <!-- Total -->
           <div class="rounded-lg border border-primary/20 bg-primary/5 p-4">
-            <p class="text-xs text-base-content/50">
+            <p class="text-xs text-gray-content/50">
               Total
             </p>
 
@@ -2949,7 +4427,7 @@ onMounted(async () => {
               Change Workflow Status?
             </h3>
 
-            <p class="mt-2 text-sm text-base-content/60">
+            <p class="mt-2 text-sm text-gray-content/60">
               Are you sure you want to change this job card's
               status?
             </p>
@@ -2958,11 +4436,11 @@ onMounted(async () => {
 
         <div
           v-if="jobCard"
-          class="mt-5 rounded-lg border border-base-300 bg-base-200 p-4"
+          class="mt-5 rounded-lg border border-gray-300 bg-gray-200 p-4"
         >
           <div class="flex items-center justify-between gap-4">
             <div>
-              <p class="text-xs text-base-content/50">
+              <p class="text-xs text-gray-content/50">
                 Current Status
               </p>
 
@@ -2977,11 +4455,11 @@ onMounted(async () => {
 
             <Icon
               name="lucide:arrow-right"
-              class="size-5 text-base-content/40"
+              class="size-5 text-gray-content/40"
             />
 
             <div class="text-right">
-              <p class="text-xs text-base-content/50">
+              <p class="text-xs text-gray-content/50">
                 New Status
               </p>
 
@@ -3066,7 +4544,7 @@ onMounted(async () => {
               Change Task Status?
             </h3>
 
-            <p class="mt-2 text-sm text-base-content/60">
+            <p class="mt-2 text-sm text-gray-content/60">
               Are you sure you want to change this task's status?
             </p>
           </div>
@@ -3074,7 +4552,7 @@ onMounted(async () => {
 
         <div
           v-if="taskStatusConfirmTask"
-          class="mt-5 rounded-lg border border-base-300 bg-base-200 p-4"
+          class="mt-5 rounded-lg border border-gray-300 bg-gray-200 p-4"
         >
           <p class="font-semibold">
             {{ taskStatusConfirmTask.title }}
@@ -3082,7 +4560,7 @@ onMounted(async () => {
 
           <div class="mt-4 flex items-center justify-between gap-4">
             <div>
-              <p class="text-xs text-base-content/50">
+              <p class="text-xs text-gray-content/50">
                 Current Status
               </p>
 
@@ -3097,11 +4575,11 @@ onMounted(async () => {
 
             <Icon
               name="lucide:arrow-right"
-              class="size-5 text-base-content/40"
+              class="size-5 text-gray-content/40"
             />
 
             <div class="text-right">
-              <p class="text-xs text-base-content/50">
+              <p class="text-xs text-gray-content/50">
                 New Status
               </p>
 

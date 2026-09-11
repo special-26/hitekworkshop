@@ -54,8 +54,20 @@ const navigation = [
   },
   {
     label: 'Parts',
-    to: '/',
+    to: '/parts',
     icon: 'i-lucide-package',
+    permission: 'parts.view'
+  },
+  {
+    label: 'Parts Requests',
+    to: '/autoparts/request',
+    icon: 'i-lucide-circle-dashed-check',
+    permission: 'parts.view'
+  },
+  {
+    label: 'Activity History',
+    to: '/autoparts/activity-history',
+    icon: 'i-lucide-clock',
     permission: 'parts.view'
   },
   {
@@ -185,6 +197,7 @@ const logout = async () => {
         </button>
 
         <div class="flex-1">
+          <NotificationsBell />
           <slot name="header" />
         </div>
 

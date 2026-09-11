@@ -393,6 +393,11 @@ onMounted(async () => {
     <div
       class="mb-6 flex flex-col gap-4 md:flex-row md:items-center md:justify-between"
     >
+      <NuxtLink to="/coordinator">
+        <button class="bg-gray-200 w-10 h-10 rounded-xl flex items-center justify-center">
+          <Icon name="i-lucide-house" class="text-gray-800" />
+        </button>
+      </NuxtLink>
       <div>
         <h1 class="text-2xl font-bold">
           Mechanic Coordinator

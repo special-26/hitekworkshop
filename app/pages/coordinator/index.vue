@@ -152,21 +152,25 @@
                 </p>
             </div>
 
-            <button
-                type="button"
-                class="btn btn-sm btn-outline"
-                :disabled="summaryLoading || activeTasksLoading"
-                @click="refreshDashboard"
-            >
-                <span
-                v-if="summaryLoading || activeTasksLoading"
-                class="loading loading-spinner loading-xs"
-                ></span>
+            <div class="flex items-center justify-center gap-10">
+                <NotificationsBell />            
 
-                <span v-else>↻</span>
+                <button
+                    type="button"
+                    class="btn btn-sm btn-outline"
+                    :disabled="summaryLoading || activeTasksLoading"
+                    @click="refreshDashboard"
+                >
+                    <span
+                    v-if="summaryLoading || activeTasksLoading"
+                    class="loading loading-spinner loading-xs"
+                    ></span>
 
-                Refresh
-            </button>
+                    <span v-else>↻</span>
+
+                    Refresh
+                </button>
+            </div>
         </div>
 
         <div

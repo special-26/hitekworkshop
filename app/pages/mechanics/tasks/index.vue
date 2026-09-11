@@ -1,4 +1,10 @@
 <script setup lang="ts">
+interface User {
+  name: string;
+}
+
+const user = useCurrentUser<User>();
+
 interface Customer {
   id: number
   customer_code: string
@@ -137,7 +143,8 @@ onMounted(fetchTasks)
     <div class="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
       <div>
         <h1 class="text-2xl font-bold">
-          My Tasks
+          Dashboard
+          {{ user?.data?.user?.name ? `- ${user.data.user.name}` : '' }} 
         </h1>
 
         <p class="text-sm text-base-content/60">
@@ -145,13 +152,18 @@ onMounted(fetchTasks)
         </p>
       </div>
 
-      <button
-        class="btn btn-outline btn-sm"
-        :disabled="loading"
-        @click="fetchTasks"
-      >
-        Refresh
-      </button>
+      <div class="flex items-center justify-center gap-10">
+        <NotificationsBell />   
+        
+        <button
+          class="btn btn-outline btn-sm"
+          :disabled="loading"
+          @click="fetchTasks"
+        >
+          Refresh
+        </button>
+      </div>
+      
     </div>
 
     <!-- Error -->

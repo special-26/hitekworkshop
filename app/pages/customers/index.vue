@@ -8,12 +8,13 @@ interface Customer {
   id: number
   customer_code: string
   name: string
-  phone: string
-  email: string | null
+  phone?: string
+  email?: string | null
   city: string | null
   state: string | null
   is_active: boolean
   vehicles_count: number
+  public_token?: string | null
 }
 
 const api = useApi()
@@ -49,6 +50,57 @@ const fetchCustomers = async () => {
   } finally {
     loading.value = false
   }
+}
+
+const trackingUrl = (customer: Customer) => {
+  if (!customer.public_token) {
+    return ''
+  }
+
+  return `${window.location.origin}/customers/track/${customer.public_token}`
+}
+
+const copyTrackingLink = async (customer: Customer) => {
+  const url = trackingUrl(customer)
+
+  if (!url) return
+
+  try {
+    await navigator.clipboard.writeText(url)
+
+    // Use your existing toast/notification system here if you have one.
+    alert('Customer tracking link copied.')
+  } catch (error) {
+    console.error('Unable to copy tracking link:', error)
+  }
+}
+
+const openTrackingPage = (customer: Customer) => {
+  const url = trackingUrl(customer)
+
+  if (!url) return
+
+  window.open(url, '_blank')
+}
+
+const sendTrackingWhatsApp = (customer: Customer) => {
+  if (!customer.public_token) return
+
+  const url = trackingUrl(customer)
+
+  const message = `Hello ${customer.name},
+
+You can track the status of your vehicle service at HITEK MOTORZ using the link below:
+
+${url}
+
+You can check your vehicle, current service status and service history anytime.`
+
+  const whatsappUrl =
+    `https://wa.me/${String(customer.phone || '').replace(/\D/g, '')}` +
+    `?text=${encodeURIComponent(message)}`
+
+  window.open(whatsappUrl, '_blank')
 }
 
 /*
@@ -237,6 +289,7 @@ onMounted(() => {
               <th>Location</th>
               <th>Vehicles</th>
               <th>Status</th>
+              <th>URL</th>
               <th class="text-right">
                 Actions
               </th>
@@ -399,6 +452,34 @@ onMounted(() => {
                       : 'Inactive'
                   }}
                 </span>
+              </td>
+
+              <!-- Public Link -->
+               <td>
+                <div class="flex flex-wrap gap-2">
+                  <button
+                    v-if="customer.public_token"
+                    class="btn btn-sm btn-outline"
+                    @click="copyTrackingLink(customer)"
+                  >
+                    🔗 Copy
+                  </button>
+
+                  <button
+                    v-if="customer.public_token"
+                    class="btn btn-sm btn-primary"
+                    @click="openTrackingPage(customer)"
+                  >
+                    Open
+                  </button>
+                  <button
+                    v-if="customer.public_token && customer.phone"
+                    class="w-8 h-8 bg-green-600 rounded-full flex items-center justify-center"
+                    @click="sendTrackingWhatsApp(customer)"
+                  >
+                    <Icon name="ic:baseline-whatsapp" class="size-4 text-white" />
+                  </button>
+                </div>
               </td>
 
               <!-- Actions -->

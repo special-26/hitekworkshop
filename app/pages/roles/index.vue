@@ -343,7 +343,7 @@ onMounted(async () => {
 <template>
   <div>
     <!-- Header -->
-    <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between dark:bg-black dark:text-white">
+    <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
       <div>
         <h1 class="text-2xl font-bold">
           Roles & Permissions

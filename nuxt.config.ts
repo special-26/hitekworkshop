@@ -13,12 +13,12 @@ export default defineNuxtConfig({
 
   runtimeConfig: {
     public: {
-      apiBaseUrl: 'http://127.0.0.1:8000'
+      apiBaseUrl: process.env.NUXT_PUBLIC_SANCTUM_BASE_URL
     }
   },
 
   laravelSanctum: {
-    apiUrl: 'http://127.0.0.1:8000',
+    apiUrl: process.env.NUXT_PUBLIC_SANCTUM_BASE_URL,
     authMode: "cookie",
 
     sanctumEndpoints: {

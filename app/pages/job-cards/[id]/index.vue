@@ -1797,17 +1797,6 @@ const fetchEmployees = async () => {
     : Array.isArray(data?.data)
       ? data.data
       : []
-
-  console.log('PRODUCTION EMPLOYEES:', employees.value)
-
-  console.log(
-    'PRODUCTION MECHANICS:',
-    employees.value.filter(employee =>
-      employee.user?.roles?.some(
-        role => role.name === 'Mechanic'
-      )
-    )
-  )
 }
 
 const taskDepartmentBays = computed(() => {
@@ -1824,17 +1813,16 @@ const taskDepartmentBays = computed(() => {
 })
 
 const taskDepartmentEmployees = computed(() => {
-  if (
-    !taskForm.department_id ||
-    !Array.isArray(employees.value)
-  ) {
+  const departmentId = Number(taskForm.department_id)
+
+  if (!departmentId || !Array.isArray(employees.value)) {
     return []
   }
 
   return employees.value.filter(employee => {
     return (
       employee.status === 'active' &&
-      employee.department_id === Number(taskForm.department_id) &&
+      employee.department_id === departmentId &&
       employee.user?.roles?.some(
         role => role.name === 'Mechanic'
       ) === true
@@ -4008,7 +3996,7 @@ onMounted(async () => {
               <option
                 v-for="department in departments"
                 :key="department.id"
-                :value="department.id"
+                :value="String(department.id)"
               >
                 {{ department.name }}
               </option>

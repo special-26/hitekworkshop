@@ -140,12 +140,13 @@ const departmentBays = computed(() => {
 */
 
 const departmentAdvisors = computed(() => {
-  if (!form.department_id) {
+
+  if (!form.department_id || !Array.isArray(employees.value)) {
     return []
   }
 
   return employees.value.filter(employee => {
-    if (employee.is_active === false) {
+    if (employee.user?.is_active === false) {
       return false
     }
 
@@ -287,11 +288,8 @@ const fetchBays = async () => {
 */
 
 const fetchEmployees = async () => {
-  const response = await api(
-    '/api/admin/employees'
-  )
-
-  employees.value = response.data
+  const response = await api('/api/admin/employees')
+  employees.value = response.data.data
 }
 
 /*

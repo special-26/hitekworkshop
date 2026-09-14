@@ -60,6 +60,11 @@ interface Employee {
   user?: {
     id: string | number
     name: string
+    is_active?: boolean
+    roles?: {
+      uuid: string
+      name: string
+    }[]
   }
 }
 
@@ -1784,7 +1789,7 @@ const fetchEmployees = async () => {
     '/api/admin/employees'
   )
 
-  const data = response.data
+  const data = response.data.data
 
   // Employee API is paginated
   employees.value = Array.isArray(data)
@@ -1808,19 +1813,22 @@ const taskDepartmentBays = computed(() => {
 })
 
 const taskDepartmentEmployees = computed(() => {
-  if (!taskForm.department_id) {
+  if (
+    !taskForm.department_id ||
+    !Array.isArray(employees.value)
+  ) {
     return []
   }
 
-  return employees.value.filter(
-    employee =>
+  return employees.value.filter(employee => {
+    return (
       employee.status === 'active' &&
-      employee.department_id ===
-        Number(taskForm.department_id) &&
+      employee.department_id === Number(taskForm.department_id) &&
       employee.user?.roles?.some(
         role => role.name === 'Mechanic'
-      )
-  )
+      ) === true
+    )
+  })
 })
 
 watch(

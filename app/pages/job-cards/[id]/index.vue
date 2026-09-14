@@ -1797,6 +1797,17 @@ const fetchEmployees = async () => {
     : Array.isArray(data?.data)
       ? data.data
       : []
+
+  console.log('PRODUCTION EMPLOYEES:', employees.value)
+
+  console.log(
+    'PRODUCTION MECHANICS:',
+    employees.value.filter(employee =>
+      employee.user?.roles?.some(
+        role => role.name === 'Mechanic'
+      )
+    )
+  )
 }
 
 const taskDepartmentBays = computed(() => {

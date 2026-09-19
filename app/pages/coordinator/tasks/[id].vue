@@ -149,11 +149,55 @@ interface SelectedPartRequest {
 
 const partsModalOpen = ref(false)
 const availableParts = ref<AvailablePart[]>([])
+const vehicleBrands = ref<any[]>([])
 const selectedPartRequests = ref<SelectedPartRequest[]>([])
 const partSearch = ref('')
 const partLoading = ref(false)
 const partSaving = ref(false)
 const partsError = ref('')
+
+const selectedBrand = ref('')
+const selectedCategory = ref('')
+const selectedPartId = ref<number | null>(null)
+
+
+const availableBrands = computed(() => {
+  return [
+    ...new Set(
+      availableParts.value
+        .map((part: any) => part.brand)
+        .filter(Boolean)
+    ),
+  ].sort()
+})
+
+const availableCategories = computed(() => {
+  const parts = selectedBrand.value
+    ? availableParts.value.filter(
+        (part: any) =>
+          part.brand === selectedBrand.value
+      )
+    : []
+
+  return [
+    ...new Set(
+      parts
+        .map((part: any) => part.category)
+        .filter(Boolean)
+    ),
+  ].sort()
+})
+
+const filteredParts = computed(() => {
+  return availableParts.value.filter((part: any) => {
+    return (
+      (!selectedBrand.value ||
+        part.brand === selectedBrand.value) &&
+      (!selectedCategory.value ||
+        part.category === selectedCategory.value)
+    )
+  })
+})
 
 const fetchAvailableParts = async () => {
   partLoading.value = true
@@ -201,6 +245,31 @@ const fetchAvailableParts = async () => {
     partLoading.value = false
   }
 }
+
+const fetchVehicleBrands = async () => {
+  try {
+    const response = await api(
+      '/api/admin/vehicles/catalog/brands'
+    )
+
+    const result = response.data
+
+    vehicleBrands.value = Array.isArray(result)
+      ? result
+      : Array.isArray(result?.data)
+        ? result.data
+        : []
+  } catch (err: any) {
+    console.error('Unable to load vehicle brands', err)
+
+    partsError.value =
+      err?.data?.message ||
+      err?.message ||
+      'Unable to load vehicle brands.'
+  }
+}
+
+
 
 const filteredAvailableParts = computed(() => {
   const search = partSearch.value.trim().toLowerCase()
@@ -294,8 +363,8 @@ const openPartsModal = async () => {
 
   resetPartForm()
 
-  if (!availableParts.value.length) {
-    await fetchAvailableParts()
+  if (!vehicleBrands.value.length) {
+    await fetchVehicleBrands()
   }
 
   partsModalOpen.value = true
@@ -1409,233 +1478,55 @@ onMounted(async () => {
           />
         </div>
 
-        <!-- Available Parts -->
-        <div class="mt-4">
-          <div class="mb-2 flex items-center justify-between">
-            <h4 class="font-semibold">
-              Available Parts
-            </h4>
+        <select
+          v-model="selectedBrand"
+          class="select select-bordered w-full"
+          @change="selectedCategory = ''; selectedPartId = null"
+        >
+          <option value="">Select Brand</option>
 
-            <span class="text-xs text-base-content/60">
-              {{ filteredAvailableParts.length }} parts
-            </span>
-          </div>
-
-          <div
-            v-if="partLoading"
-            class="flex justify-center py-8"
+          <option
+            v-for="brand in availableBrands"
+            :key="brand"
+            :value="brand"
           >
-            <span class="loading loading-spinner"></span>
-          </div>
+            {{ brand }}
+          </option>
+        </select>
+        <select
+          v-model="selectedCategory"
+          class="select select-bordered w-full"
+          :disabled="!selectedBrand"
+          @change="selectedPartId = null"
+        >
+          <option value="">Select Category</option>
 
-          <div
-            v-else-if="!filteredAvailableParts.length"
-            class="rounded-lg bg-base-300 p-4 text-sm text-base-content/60"
+          <option
+            v-for="category in availableCategories"
+            :key="category"
+            :value="category"
           >
-            No parts found.
-          </div>
+            {{ category }}
+          </option>
+        </select>
+        <select
+          v-model="selectedPartId"
+          class="select select-bordered w-full"
+          :disabled="!selectedCategory"
+        >
+          <option :value="null">Select Part</option>
 
-          <div
-            v-else
-            class="max-h-64 overflow-y-auto rounded-lg border border-base-300"
+          <option
+            v-for="part in filteredParts.filter(
+              (part) => part.category === selectedCategory
+            )"
+            :key="part.id"
+            :value="part.id"
           >
-            <div
-              v-for="part in filteredAvailableParts"
-              :key="part.id"
-              class="flex items-center justify-between gap-3 border-b border-base-300 p-3 last:border-0"
-            >
-              <div class="min-w-0">
-                <p class="font-medium">
-                  {{ part.name }}
-                </p>
-
-                <p class="text-sm text-base-content/60">
-                  {{ part.part_number }}
-                  <span v-if="part.brand">
-                    · {{ part.brand }}
-                  </span>
-                </p>
-
-                <p class="text-xs text-base-content/50">
-                  Price: ₹{{ part.selling_price ?? '0' }}
-                  · Unit: {{ part.unit }}
-                </p>
-              </div>
-
-              <button
-                type="button"
-                class="btn btn-sm"
-                :class="
-                  isPartSelected(part.id)
-                    ? 'btn-disabled'
-                    : 'btn-outline btn-primary'
-                "
-                :disabled="isPartSelected(part.id)"
-                @click="addPartToSelection(part)"
-              >
-                {{
-                  isPartSelected(part.id)
-                    ? 'Selected'
-                    : 'Select'
-                }}
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <!-- Selected Parts -->
-        <div class="mt-6">
-          <h4 class="mb-2 font-semibold">
-            Selected Parts
-          </h4>
-
-          <div
-            v-if="!selectedPartRequests.length"
-            class="rounded-lg bg-base-300 p-4 text-sm text-base-content/60"
-          >
-            No parts selected yet.
-          </div>
-
-          <div
-            v-else
-            class="space-y-4"
-          >
-            <div
-              v-for="selected in selectedPartRequests"
-              :key="selected.part_id"
-              class="rounded-lg border border-base-300 p-4"
-            >
-              <div class="flex items-start justify-between gap-3">
-                <div>
-                  <p class="font-semibold">
-                    {{
-                      getSelectedPartDetails(
-                        selected.part_id
-                      )?.name || 'Part'
-                    }}
-                  </p>
-
-                  <p class="text-xs text-base-content/60">
-                    {{
-                      getSelectedPartDetails(
-                        selected.part_id
-                      )?.part_number || '—'
-                    }}
-                  </p>
-                </div>
-
-                <button
-                  type="button"
-                  class="btn btn-ghost btn-xs text-error"
-                  @click="
-                    removePartFromSelection(
-                      selected.part_id
-                    )
-                  "
-                >
-                  Remove
-                </button>
-              </div>
-
-              <div class="mt-4 grid gap-3 sm:grid-cols-3">
-                <!-- Quantity -->
-                <div>
-                  <label class="label">
-                    <span class="label-text">
-                      Quantity
-                    </span>
-                  </label>
-
-                  <input
-                    :value="selected.quantity"
-                    type="number"
-                    min="1"
-                    step="1"
-                    class="input input-bordered w-full"
-                    @input="
-                      updateSelectedPart(
-                        selected.part_id,
-                        'quantity',
-                        ($event.target as HTMLInputElement).value
-                      )
-                    "
-                  />
-                </div>
-
-                <!-- Unit Price -->
-                <div>
-                  <label class="label">
-                    <span class="label-text">
-                      Unit Price
-                    </span>
-                  </label>
-
-                  <input
-                    :value="selected.unit_price"
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    class="input input-bordered w-full"
-                    @input="
-                      updateSelectedPart(
-                        selected.part_id,
-                        'unit_price',
-                        ($event.target as HTMLInputElement).value
-                      )
-                    "
-                  />
-                </div>
-
-                <!-- Discount -->
-                <div>
-                  <label class="label">
-                    <span class="label-text">
-                      Discount
-                    </span>
-                  </label>
-
-                  <input
-                    :value="selected.discount"
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    class="input input-bordered w-full"
-                    @input="
-                      updateSelectedPart(
-                        selected.part_id,
-                        'discount',
-                        ($event.target as HTMLInputElement).value
-                      )
-                    "
-                  />
-                </div>
-              </div>
-
-              <!-- Notes -->
-              <div class="mt-3">
-                <label class="label">
-                  <span class="label-text">
-                    Notes
-                  </span>
-                </label>
-
-                <textarea
-                  :value="selected.notes"
-                  rows="2"
-                  placeholder="Optional notes..."
-                  class="textarea textarea-bordered w-full"
-                  @input="
-                    updateSelectedPart(
-                      selected.part_id,
-                      'notes',
-                      ($event.target as HTMLTextAreaElement).value
-                    )
-                  "
-                ></textarea>
-              </div>
-            </div>
-          </div>
-        </div>
+            {{ part.name }} ({{ part.part_number }})
+            — ₹{{ part.selling_price }}
+          </option>
+        </select>
 
         <!-- Modal Actions -->
         <div class="modal-action">

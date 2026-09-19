@@ -1092,6 +1092,7 @@ const taskStatusLabel = (
 
 // Fetching added Parts
 const fetchAvailableParts = async () => {
+
   try {
     const response = await api('/api/admin/parts', {
       query: {
@@ -1107,6 +1108,7 @@ const fetchAvailableParts = async () => {
       : Array.isArray(data?.data)
         ? data.data
         : []
+
   } catch (err: any) {
     console.error(err)
 
@@ -2019,6 +2021,7 @@ const taskDepartmentEmployees = computed(() => {
 })
 
 // Whatsapp Methods
+type WhatsAppShareType = 'status' | 'estimate' | 'final'
 const openWhatsApp = async (type: string) => {
   if (!jobCard.value?.id) {
     return

@@ -53,6 +53,12 @@ const navigation = [
     permission: 'roles.view'
   },
   {
+    label: 'Service Task',
+    to: '/service-tasks',
+    icon: 'i-lucide-list-check',
+    permission: 'roles.view'
+  },
+  {
     label: 'Parts',
     to: '/parts',
     icon: 'i-lucide-package',
@@ -72,7 +78,7 @@ const navigation = [
   },
   {
     label: 'Inventory',
-    to: '/',
+    to: '/parts',
     icon: 'i-lucide-box',
     permission: 'inventory.view'
   }
@@ -112,7 +118,7 @@ const logout = async () => {
       <!-- Logo -->
       <div class="flex h-16 items-center border-b border-gray-300 px-6">
         <NuxtLink
-          to="/dashboard"
+          to="/auth/dashboard"
           class="text-xl font-bold text-gray-900"
         >
           HITEK

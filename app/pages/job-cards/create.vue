@@ -1,9 +1,9 @@
-```vue
 <script setup lang="ts">
 definePageMeta({
   layout: 'dashboard',
   middleware: ['$auth'],
 })
+
 
 interface Customer {
   id: number
@@ -51,6 +51,7 @@ interface Employee {
 }
 
 const router = useRouter()
+const route = useRoute()
 const api = useApi()
 
 const { hasPermission } = usePermissions()
@@ -67,6 +68,14 @@ const vehicles = ref<Vehicle[]>([])
 const departments = ref<Department[]>([])
 const bays = ref<Bay[]>([])
 const employees = ref<Employee[]>([])
+
+// Step 1 - Customer search
+const customerPhone = ref('')
+const customerSearchLoading = ref(false)
+const customerSearchError = ref('')
+const customerSearched = ref(false)
+const showCustomerModal = ref(false)
+const customerNotFound = ref(false)
 
 /*
 |--------------------------------------------------------------------------
@@ -219,6 +228,119 @@ watch(
   }
 )
 
+// Search Cutomers
+const searchCustomer = () => {
+  customerSearchError.value = ''
+  customerSearched.value = false
+  customerNotFound.value = false
+
+  const phone = customerPhone.value
+    .replace(/\D/g, '')
+    .slice(-10)
+
+  customerPhone.value = phone
+
+  form.customer_id = ''
+  form.vehicle_id = ''
+
+  if (phone.length !== 10) {
+    customerSearchError.value =
+      'Please enter a valid 10-digit mobile number.'
+
+    customerSearched.value = true
+    return
+  }
+
+  customerSearchLoading.value = true
+
+  try {
+
+    const customer = customers.value.find(customer => {
+      const savedPhone = customer.phone
+        ?.replace(/\D/g, '')
+        .slice(-10)
+
+      return savedPhone === phone
+    })
+
+    if (customer) {
+      form.customer_id = String(customer.id)
+      form.vehicle_id = ''
+
+      customerSearched.value = true
+      customerNotFound.value = false
+
+      return
+    }
+
+    // Customer does not exist
+    customerSearched.value = true
+    customerNotFound.value = true
+
+  } catch (err) {
+    console.error('Customer search error:', err)
+
+    customerSearchError.value =
+      'Unable to search customer. Please try again.'
+
+    customerSearched.value = true
+    customerNotFound.value = false
+
+  } finally {
+    customerSearchLoading.value = false
+  }
+}
+
+const handleCustomerCreated = (customer: Customer) => {
+  console.log('HANDLE CUSTOMER CREATED:', customer)
+
+  if (!customer?.id) {
+    console.error(
+      'Created customer does not contain an ID:',
+      customer
+    )
+
+    return
+  }
+
+  // Add the new customer to the local customer list
+  const existingIndex = customers.value.findIndex(
+    item => item.id === customer.id
+  )
+
+  if (existingIndex === -1) {
+    customers.value.push(customer)
+  } else {
+    customers.value[existingIndex] = customer
+  }
+
+  // Select the newly created customer
+  form.customer_id = String(customer.id)
+
+  // Reset vehicle selection
+  form.vehicle_id = ''
+
+  // Set the searched phone number
+  customerPhone.value = customer.phone || ''
+
+  // Update search states
+  customerSearched.value = true
+  customerNotFound.value = false
+  customerSearchError.value = ''
+
+  // Close the modal
+  showCustomerModal.value = false
+}
+// add new Vehicle
+const showVehicleModal = ref(false)
+const handleVehicleCreated = (vehicle: Vehicle) => {
+  vehicles.value.push(vehicle)
+
+  form.vehicle_id = String(vehicle.id)
+
+  showVehicleModal.value = false
+}
+
 /*
 |--------------------------------------------------------------------------
 | Fetch Customers
@@ -230,7 +352,13 @@ const fetchCustomers = async () => {
     '/api/admin/customers'
   )
 
-  customers.value = response.data
+  const customerData = response.data
+
+  customers.value = Array.isArray(customerData)
+    ? customerData
+    : Array.isArray(customerData?.data)
+      ? customerData.data
+      : []
 }
 
 /*
@@ -428,6 +556,12 @@ const cancel = () => {
 }
 
 onMounted(() => {
+  const customerId = route.query.customer_id
+
+  if (customerId) {
+    form.customer_id = String(customerId)
+  }
+
   fetchInitialData()
 })
 </script>
@@ -516,146 +650,277 @@ onMounted(() => {
         <div class="card-body">
           <!-- Customer & Vehicle -->
           <div>
-            <h2 class="text-lg font-semibold">
-              Customer & Vehicle
-            </h2>
+            <div>
+              <h2 class="text-lg font-semibold">
+                Customer & Vehicle
+              </h2>
 
-            <p class="text-sm text-base-content/60">
-              Select the customer and vehicle for this job.
-            </p>
-          </div>
-
-          <div class="mt-5 grid grid-cols-1 gap-5 md:grid-cols-2">
-            <!-- Customer -->
-            <fieldset class="fieldset">
-              <legend class="fieldset-legend">
-                Customer
-              </legend>
-
-              <select
-                v-model="form.customer_id"
-                class="select select-bordered w-full"
-                :class="{
-                  'select-error': fieldError('customer_id'),
-                }"
-              >
-                <option
-                  value=""
-                  disabled
-                >
-                  Select customer
-                </option>
-
-                <option
-                  v-for="customer in customers"
-                  :key="customer.id"
-                  :value="customer.id"
-                >
-                  {{ customer.customer_code }} -
-                  {{ customer.name }}
-                  ({{ customer.phone }})
-                </option>
-              </select>
-
-              <p
-                v-if="fieldError('customer_id')"
-                class="label text-error"
-              >
-                {{ fieldError('customer_id') }}
+              <p class="text-sm text-base-content/60">
+                Search the customer by mobile number and select their vehicle.
               </p>
-            </fieldset>
+            </div>
 
-            <!-- Vehicle -->
-            <fieldset class="fieldset">
-              <legend class="fieldset-legend">
-                Vehicle
-              </legend>
+            <!-- Customer Search -->
+            <div class="mt-5">
+              <fieldset class="fieldset">
+                <legend class="fieldset-legend">
+                  Customer Mobile Number
+                </legend>
 
-              <select
-                v-model="form.vehicle_id"
-                class="select select-bordered w-full"
-                :disabled="!form.customer_id"
-                :class="{
-                  'select-error': fieldError('vehicle_id'),
-                }"
-              >
-                <option
-                  value=""
-                  disabled
+                <div class="flex flex-col gap-3 sm:flex-row">
+                  <label
+                    class="input input-bordered flex flex-1 items-center gap-2"
+                    :class="{
+                      'input-error': customerSearchError,
+                    }"
+                  >
+                    <Icon
+                      name="lucide:phone"
+                      class="size-5 text-base-content/50"
+                    />
+
+                    <input
+                      v-model="customerPhone"
+                      type="tel"
+                      inputmode="numeric"
+                      maxlength="10"
+                      class="grow"
+                      placeholder="Enter 10-digit mobile number"
+                      @keyup.enter="searchCustomer"
+                    />
+                  </label>
+
+                  <button
+                    type="button"
+                    class="btn btn-primary"
+                    :disabled="customerSearchLoading"
+                    @click="searchCustomer"
+                  >
+                    <span
+                      v-if="customerSearchLoading"
+                      class="loading loading-spinner loading-sm"
+                    />
+
+                    <Icon
+                      v-else
+                      name="lucide:search"
+                      class="size-4"
+                    />
+
+                    Search
+                  </button>
+                </div>
+
+                <p
+                  v-if="customerSearchError"
+                  class="label text-error"
                 >
-                  {{
-                    form.customer_id
-                      ? 'Select vehicle'
-                      : 'Select customer first'
-                  }}
-                </option>
+                  {{ customerSearchError }}
+                </p>
+              </fieldset>
+            </div>
 
-                <option
+            <!-- If customer not found -->
+            <div
+              v-if="customerNotFound"
+              class="alert alert-warning mt-4"
+            >
+              <div>
+                <h3 class="font-bold">
+                  Customer not found
+                </h3>
+
+                <p class="text-sm">
+                  No customer exists with this mobile number.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                class="btn btn-primary btn-sm"
+                @click="showCustomerModal = true"
+              >
+                Create Customer
+              </button>
+            </div>
+
+            <!-- Customer Found -->
+            <div
+              v-if="selectedCustomer"
+              class="mt-5 rounded-xl border border-success/30 bg-success/5 p-5"
+            >
+              <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+
+                <div class="flex items-center gap-4">
+                  <div
+                    class="flex size-12 shrink-0 items-center justify-center rounded-full bg-primary/10"
+                  >
+                    <Icon
+                      name="lucide:user"
+                      class="size-6 text-primary"
+                    />
+                  </div>
+
+                  <div>
+                    <p class="font-semibold text-base-content">
+                      {{ selectedCustomer.name }}
+                    </p>
+
+                    <div class="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-sm text-base-content/60">
+                      <span class="flex items-center gap-1">
+                        <Icon
+                          name="lucide:phone"
+                          class="size-3.5"
+                        />
+                        {{ selectedCustomer.phone }}
+                      </span>
+
+                      <span>
+                        {{ selectedCustomer.customer_code }}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  class="btn btn-ghost btn-sm"
+                  @click="
+                    customerPhone = '',
+                    form.customer_id = '',
+                    form.vehicle_id = '',
+                    customerSearched = false,
+                    customerSearchError = ''
+                  "
+                >
+                  Change
+                </button>
+
+              </div>
+            </div>
+
+            <!-- Vehicle Selection -->
+            <div
+              v-if="selectedCustomer"
+              class="mt-6"
+            >
+              <div class="mb-3">
+                <h3 class="font-semibold">
+                  Select Vehicle
+                </h3>
+
+                <p class="text-sm text-base-content/60">
+                  Choose the vehicle for this service.
+                </p>
+              </div>
+
+              <!-- Vehicles -->
+              <div
+                v-if="customerVehicles.length"
+                class="grid grid-cols-1 gap-3 lg:grid-cols-2"
+              >
+                <button
                   v-for="vehicle in customerVehicles"
                   :key="vehicle.id"
-                  :value="vehicle.id"
+                  type="button"
+                  class="rounded-xl border p-4 text-left transition hover:border-primary hover:bg-primary/5"
+                  :class="
+                    Number(form.vehicle_id) === vehicle.id
+                      ? 'border-primary bg-primary/10 ring-1 ring-primary'
+                      : 'border-base-300 bg-base-100'
+                  "
+                  @click="form.vehicle_id = String(vehicle.id)"
                 >
-                  {{ vehicle.registration_number }}
-                  -
-                  {{ vehicle.make }}
-                  {{ vehicle.model }}
-                  <template v-if="vehicle.variant">
-                    ({{ vehicle.variant }})
-                  </template>
-                </option>
-              </select>
+                  <div class="flex items-start gap-4">
 
-              <p
-                v-if="form.customer_id && customerVehicles.length === 0"
-                class="label text-warning"
+                    <div
+                      class="flex size-11 shrink-0 items-center justify-center rounded-lg bg-base-200"
+                    >
+                      <Icon
+                        name="lucide:car-front"
+                        class="size-5 text-primary"
+                      />
+                    </div>
+
+                    <div class="min-w-0 flex-1">
+
+                      <div class="flex items-start justify-between gap-3">
+                        <div>
+                          <p class="font-semibold">
+                            {{ vehicle.make }}
+                            {{ vehicle.model }}
+                          </p>
+
+                          <p class="mt-1 font-mono text-sm font-medium">
+                            {{ vehicle.registration_number }}
+                          </p>
+                        </div>
+
+                        <div
+                          v-if="Number(form.vehicle_id) === vehicle.id"
+                          class="badge badge-primary"
+                        >
+                          Selected
+                        </div>
+                      </div>
+
+                      <div class="mt-2 flex flex-wrap gap-2 text-xs text-base-content/60">
+                        <span v-if="vehicle.variant">
+                          {{ vehicle.variant }}
+                        </span>
+
+                        <span v-if="vehicle.fuel_type">
+                          {{ vehicle.fuel_type }}
+                        </span>
+                      </div>
+
+                    </div>
+                  </div>
+                </button>
+              </div>
+
+              <!-- No Vehicle -->
+              <div
+                v-else
+                class="rounded-xl border border-warning/30 bg-warning/5 p-5"
               >
-                No vehicles found for this customer.
-              </p>
+                <div class="flex items-start gap-3">
+                  <Icon
+                    name="lucide:car"
+                    class="mt-0.5 size-5 text-warning"
+                  />
+
+                  <div>
+                    <p class="font-medium">
+                      No vehicle registered
+                    </p>
+
+                    <p class="mt-1 text-sm text-base-content/60">
+                      This customer does not have any vehicle registered yet.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Add Vehicle -->
+             <button
+                type="button"
+                class="btn btn-outline mt-4"
+                @click="showVehicleModal = true"
+              >
+                <Icon name="lucide:plus" class="size-4" />
+                Add New Vehicle
+              </button>
 
               <p
                 v-if="fieldError('vehicle_id')"
-                class="label text-error"
+                class="mt-2 text-sm text-error"
               >
                 {{ fieldError('vehicle_id') }}
               </p>
-            </fieldset>
-          </div>
-
-          <!-- Selected Vehicle Preview -->
-          <div
-            v-if="selectedCustomer && selectedVehicle"
-            class="mt-5 rounded-xl border border-base-300 bg-base-200 p-5"
-          >
-            <div class="flex flex-col gap-4 sm:flex-row sm:items-center">
-              <div class="flex size-12 shrink-0 items-center justify-center rounded-xl bg-primary/10">
-                <Icon
-                  name="lucide:car-front"
-                  class="size-6 text-primary"
-                />
-              </div>
-
-              <div class="min-w-0">
-                <p class="font-semibold">
-                  {{ selectedVehicle.make }}
-                  {{ selectedVehicle.model }}
-                </p>
-
-                <div class="mt-1 flex flex-wrap gap-3 text-sm text-base-content/60">
-                  <span>
-                    {{ selectedVehicle.registration_number }}
-                  </span>
-
-                  <span>
-                    {{ selectedCustomer.name }}
-                  </span>
-
-                  <span>
-                    {{ selectedCustomer.phone }}
-                  </span>
-                </div>
-              </div>
             </div>
           </div>
+          <!-- Customer & Vehicle Ends -->
 
           <div class="divider" />
 
@@ -985,6 +1250,33 @@ onMounted(() => {
         </div>
       </form>
     </template>
+
+    <!-- App Modal-Create Customer -->
+    <AdminCommonAppModal
+      v-model="showCustomerModal"
+      title="Create Customer"
+      width="max-w-xl"
+    >
+      <AdminCustomerForm
+        :initial-phone="customerPhone"
+        @saved="handleCustomerCreated"
+        @cancel="showCustomerModal = false"
+      />
+    </AdminCommonAppModal>
+
+    <!-- Add New Vehicle to Customer -->
+    <AdminCommonAppModal
+      v-model="showVehicleModal"
+      title="Add New Vehicle"
+      width="max-w-3xl"
+    >
+      <AdminVehicleForm
+        v-if="selectedCustomer"
+        :customer-id="selectedCustomer.id"
+        @saved="handleVehicleCreated"
+        @cancel="showVehicleModal = false"
+      />
+    </AdminCommonAppModal>
+
   </div>
 </template>
-```

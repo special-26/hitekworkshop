@@ -169,7 +169,7 @@ onMounted(() => {
           Parts Requests
         </h1>
 
-        <p class="text-sm text-base-content/60">
+        <p class="text-sm text-gray-800/60">
           Parts waiting to be issued for workshop jobs
         </p>
       </div>
@@ -207,7 +207,7 @@ onMounted(() => {
 
     <div
       v-else-if="!requests.length"
-      class="rounded-xl border border-base-300 bg-base-200/40 p-10 text-center"
+      class="rounded-xl border border-gray-300 bg-gray-200/40 p-10 text-center"
     >
       <div class="text-4xl mb-3">
         ✓
@@ -217,7 +217,7 @@ onMounted(() => {
         No Pending Parts
       </h2>
 
-      <p class="mt-1 text-sm text-base-content/60">
+      <p class="mt-1 text-sm text-gray-800/60">
         All requested parts have been issued.
       </p>
     </div>
@@ -229,13 +229,13 @@ onMounted(() => {
       <div
         v-for="request in requests"
         :key="request.id"
-        class="card border border-base-300 bg-base-100 shadow-sm"
+        class="card border border-gray-300 bg-gray-100 shadow-sm"
       >
         <div class="card-body p-4">
           <!-- Job / Vehicle -->
           <div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
             <div>
-              <p class="text-xs text-base-content/50">
+              <p class="text-xs text-gray-800/50">
                 Job Card
               </p>
 
@@ -245,7 +245,7 @@ onMounted(() => {
 
               <p
                 v-if="request.job_card.vehicle"
-                class="text-sm text-base-content/70"
+                class="text-sm text-gray-800/70"
               >
                 {{ request.job_card.vehicle.registration_number }}
                 ·
@@ -255,7 +255,7 @@ onMounted(() => {
 
               <p
                 v-if="request.job_card.customer"
-                class="text-sm text-base-content/60"
+                class="text-sm text-gray-800/60"
               >
                 Customer: {{ request.job_card.customer.name }}
               </p>
@@ -289,7 +289,7 @@ onMounted(() => {
                         ) >= 30
                     )
                         ? 'text-error font-semibold'
-                        : 'text-base-content/60'
+                        : 'text-gray-800/60'
                     "
                 >
                     ⏱ {{ waitingTime(request) }}
@@ -302,7 +302,7 @@ onMounted(() => {
           <!-- Part details -->
           <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <div>
-              <p class="text-xs text-base-content/50">
+              <p class="text-xs text-gray-800/50">
                 Part
               </p>
 
@@ -310,13 +310,13 @@ onMounted(() => {
                 {{ request.part.name }}
               </p>
 
-              <p class="text-xs text-base-content/50">
+              <p class="text-xs text-gray-800/50">
                 {{ request.part.part_number }}
               </p>
             </div>
 
             <div>
-              <p class="text-xs text-base-content/50">
+              <p class="text-xs text-gray-800/50">
                 Task
               </p>
 
@@ -326,7 +326,7 @@ onMounted(() => {
             </div>
 
             <div>
-              <p class="text-xs text-base-content/50">
+              <p class="text-xs text-gray-800/50">
                 Requested
               </p>
 
@@ -336,7 +336,7 @@ onMounted(() => {
             </div>
 
             <div>
-              <p class="text-xs text-base-content/50">
+              <p class="text-xs text-gray-800/50">
                 Current Stock
               </p>
 

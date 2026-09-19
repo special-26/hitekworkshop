@@ -106,8 +106,8 @@
                 '/api/admin/coordinator/tasks?status=assigned,in_progress,on_hold'
             )
 
-            activeTasks.value = Array.isArray(response.data)
-                ? [...response.data].sort((a, b) => {
+            activeTasks.value = Array.isArray(response.data?.data)
+                ? [...response.data?.data].sort((a, b) => {
                     const order: Record<string, number> = {
                         on_hold: 1,
                         in_progress: 2,

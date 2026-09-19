@@ -83,7 +83,7 @@
     const fetchRoles = async () => {
       try {
         const response = await api('/api/admin/roles')
-        console.log('Roles API Response:', response)
+    
         roles.value = response.data
       } catch (err) {
         console.error('Unable to fetch roles:', err)

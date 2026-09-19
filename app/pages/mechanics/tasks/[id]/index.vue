@@ -151,6 +151,11 @@ const availableActions = computed(() => {
     return []
   }
 
+  const hasPendingParts =
+    task.value?.parts?.some(
+      part => part.status === 'pending'
+    ) ?? false
+
   switch (task.value.status) {
     case 'assigned':
       return [
@@ -169,15 +174,19 @@ const availableActions = computed(() => {
     case 'in_progress':
       return [
         {
-          status: 'on_hold',
           label: 'Put On Hold',
-          class: 'btn-warning',
+          status: 'on_hold',
         },
-        {
-          status: 'completed',
-          label: 'Complete Task',
-          class: 'btn-success',
-        },
+
+        ...(hasPendingParts
+          ? []
+          : [
+              {
+                label: 'Complete Task',
+                status: 'completed',
+                class: 'btn-success',
+              },
+            ]),
       ]
 
     case 'on_hold':

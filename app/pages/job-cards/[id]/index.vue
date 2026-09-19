@@ -89,9 +89,43 @@ interface JobCard {
   bay?: Bay
   advisor?: Advisor
 }
+interface ServiceTaskPart {
+  id: number
+  part_id: number
+  default_quantity: number | string
+  is_required: boolean
+
+  part?: {
+    id: number
+    part_number: string
+    name: string
+    category: string | null
+    brand: string | null
+    unit: string
+    selling_price: string | number
+  }
+}
+
+interface ServiceTask {
+  id: number
+  name: string
+  slug: string
+  description: string | null
+  instructions: string | null
+  part_category_id: number | null
+  is_active: boolean
+
+  part_category?: {
+    id: number
+    name: string
+  }
+
+  task_parts?: ServiceTaskPart[]
+}
 interface JobCardTask {
   id: number
   job_card_id: number
+  service_task_id: number | null
   department_id: number
   bay_id: number | null
   assigned_to: number | null
@@ -104,6 +138,8 @@ interface JobCardTask {
   started_at: string | null
   completed_at: string | null
   notes: string | null
+
+  service_task?: ServiceTask | null
 
   department?: Department
   bay?: Bay
@@ -202,6 +238,15 @@ interface JobCardInvoice {
   items: JobCardInvoiceItem[]
 }
 
+interface SelectedPartRequest {
+  part_id: string
+  job_card_task_id: string
+  quantity: string
+  unit_price: string
+  discount: string
+  notes: string
+}
+
 
 const route = useRoute()
 const router = useRouter()
@@ -237,6 +282,58 @@ const tasks = ref<JobCardTask[]>([])
 const tasksLoading = ref(false)
 const taskSaving = ref(false)
 const taskError = ref('')
+
+const serviceTasks = ref<ServiceTask[]>([])
+const serviceTasksLoading = ref(false)
+const serviceTaskMode = ref<'predefined' | 'custom'>('predefined')
+
+// Fetch Predefined Service Tasks
+const fetchServiceTasks = async () => {
+  serviceTasksLoading.value = true
+
+  try {
+    const response = await api('/api/admin/service-tasks', {
+      query: {
+        is_active: true,
+        per_page: 100,
+      },
+    })
+
+    const data = response.data
+
+    serviceTasks.value = Array.isArray(data)
+      ? data
+      : Array.isArray(data?.data)
+        ? data.data
+        : []
+  } catch (err: any) {
+    console.error('Unable to load service tasks:', err)
+
+    taskError.value =
+      err?.data?.message ||
+      err?.response?._data?.message ||
+      'Unable to load predefined tasks.'
+  } finally {
+    serviceTasksLoading.value = false
+  }
+}
+const selectedServiceTask = computed(() => {
+  if (!taskForm.service_task_id) {
+    return null
+  }
+
+  return serviceTasks.value.find(
+    task => String(task.id) === String(taskForm.service_task_id)
+  ) || null
+})
+const applyServiceTask = (serviceTask: ServiceTask | null) => {
+  if (!serviceTask) {
+    return
+  }
+
+  taskForm.title = serviceTask.name
+  taskForm.description = serviceTask.description || ''
+}
 
 // Job Card Parts
 const parts = ref<JobCardPart[]>([])
@@ -705,60 +802,215 @@ const generateInvoice = async () => {
 }
 // Final Bill Ends
 
-const availableParts = ref<any[]>([])
-const partsModalOpen = ref(false)
-const partSaving = ref(false)
 
-const partForm = reactive({
-  part_id: '',
-  job_card_task_id: '',
-  quantity: '1',
-  unit_price: '',
-  discount: '0',
-  notes: '',
-})
+// Part Requested
+const filteredAvailableParts = computed(() => {
+  const search = partSearch.value.trim().toLowerCase()
 
-const selectedPart = computed(() => {
-  if (!partForm.part_id) {
-    return null
+  if (!search) {
+    return availableParts.value
   }
 
-  return availableParts.value.find(
-    part => String(part.id) === String(partForm.part_id)
-  ) || null
-})
-
-watch(
-  () => partForm.part_id,
-  () => {
-    if (selectedPart.value) {
-      partForm.unit_price = String(
-        selectedPart.value.selling_price ?? ''
+  return availableParts.value.filter((part) => {
+    return [
+      part.part_number,
+      part.name,
+      part.brand,
+      part.category,
+    ]
+      .filter(Boolean)
+      .some((value) =>
+        String(value).toLowerCase().includes(search)
       )
-    } else {
-      partForm.unit_price = ''
-    }
+  })
+})
+const isPartSelected = (partId: number | string) => {
+  return selectedPartRequests.value.some(
+    (item) => String(item.part_id) === String(partId)
+  )
+}
+
+const getSelectedPartRequest = (partId: number | string) => {
+  return selectedPartRequests.value.find(
+    (item) => String(item.part_id) === String(partId)
+  )
+}
+
+const addPartToSelection = (part: any) => {
+  if (isPartSelected(part.id)) {
+    return
   }
-)
-const partTotal = computed(() => {
-  const quantity = Number(partForm.quantity) || 0
-  const unitPrice = Number(partForm.unit_price) || 0
-  const discount = Number(partForm.discount) || 0
+
+  selectedPartRequests.value.push({
+    part_id: String(part.id),
+    job_card_task_id: '',
+    quantity: '1',
+    unit_price: String(part.selling_price ?? '0'),
+    discount: '0',
+    notes: '',
+  })
+}
+
+const removePartFromSelection = (partId: number | string) => {
+  selectedPartRequests.value =
+    selectedPartRequests.value.filter(
+      (item) => String(item.part_id) !== String(partId)
+    )
+}
+
+const updateSelectedPart = (
+  partId: number | string,
+  field: keyof SelectedPartRequest,
+  value: string
+) => {
+  const selected = getSelectedPartRequest(partId)
+
+  if (!selected) {
+    return
+  }
+
+  selected[field] = value
+}
+
+const getSelectedPartDetails = (partId: number | string) => {
+  return availableParts.value.find(
+    (part) => String(part.id) === String(partId)
+  ) || null
+}
+
+const getSelectedPartTotal = (
+  selected: SelectedPartRequest
+) => {
+  const quantity = Number(selected.quantity) || 0
+  const unitPrice = Number(selected.unit_price) || 0
+  const discount = Number(selected.discount) || 0
 
   return Math.max(
     0,
     quantity * unitPrice - discount
   )
+}
+
+const closePartModal = () => {
+  if (partSaving.value) {
+    return
+  }
+
+  partsModalOpen.value = false
+}
+const savePart = async () => {
+  if (!jobCard.value) {
+    return
+  }
+
+  if (selectedPartRequests.value.length === 0) {
+    partsError.value = 'Please select at least one part.'
+    return
+  }
+
+  for (const selected of selectedPartRequests.value) {
+    if (!selected.quantity || Number(selected.quantity) <= 0) {
+      partsError.value = 'Quantity must be greater than zero.'
+      return
+    }
+
+    if (
+      selected.discount &&
+      Number(selected.discount) < 0
+    ) {
+      partsError.value = 'Discount cannot be negative.'
+      return
+    }
+
+    if (
+      selected.unit_price &&
+      Number(selected.unit_price) < 0
+    ) {
+      partsError.value = 'Unit price cannot be negative.'
+      return
+    }
+
+    const total = getSelectedPartTotal(selected)
+
+    if (total < 0) {
+      partsError.value = 'Invalid part total.'
+      return
+    }
+  }
+
+  partSaving.value = true
+  partsError.value = ''
+
+  try {
+    for (const selected of selectedPartRequests.value) {
+      await api(
+        `/api/admin/job-cards/${jobCard.value.id}/parts`,
+        {
+          method: 'POST',
+          body: {
+            part_id: Number(selected.part_id),
+
+            job_card_task_id:
+              selected.job_card_task_id
+                ? Number(selected.job_card_task_id)
+                : null,
+
+            quantity: Number(selected.quantity),
+
+            unit_price:
+              selected.unit_price
+                ? Number(selected.unit_price)
+                : null,
+
+            discount:
+              selected.discount
+                ? Number(selected.discount)
+                : 0,
+
+            notes:
+              selected.notes.trim() || null,
+          },
+        }
+      )
+    }
+
+    partsModalOpen.value = false
+    resetPartForm()
+
+    await fetchParts()
+  } catch (err: any) {
+    console.error(err)
+
+    partsError.value =
+      err?.data?.message ||
+      err?.response?._data?.message ||
+      'Unable to add one or more parts.'
+  } finally {
+    partSaving.value = false
+  }
+}
+
+const selectedPartsTotal = computed(() => {
+  return selectedPartRequests.value.reduce(
+    (total, selected) => {
+      return total + getSelectedPartTotal(selected)
+    },
+    0
+  )
 })
+
+// Request parts
+const availableParts = ref<any[]>([])
+const partsModalOpen = ref(false)
+const partSaving = ref(false)
+const partSearch = ref('')
+
+const selectedPartRequests = ref<SelectedPartRequest[]>([])
 
 // Open/close modal of Add Parts
 const resetPartForm = () => {
-  partForm.part_id = ''
-  partForm.job_card_task_id = ''
-  partForm.quantity = '1'
-  partForm.unit_price = ''
-  partForm.discount = '0'
-  partForm.notes = ''
+  selectedPartRequests.value = []
+  partSearch.value = ''
 }
 
 const openCreatePart = async () => {
@@ -772,79 +1024,10 @@ const openCreatePart = async () => {
   partsModalOpen.value = true
 }
 
-const closePartModal = () => {
-  if (partSaving.value) {
-    return
-  }
-
-  partsModalOpen.value = false
-}
-
-// Save Parts
-const savePart = async () => {
-  if (!jobCard.value) {
-    return
-  }
-
-  if (!partForm.part_id) {
-    partsError.value = 'Please select a part.'
-    return
-  }
-
-  partSaving.value = true
-  partsError.value = ''
-
-  try {
-    await api(
-      `/api/admin/job-cards/${jobCard.value.id}/parts`,
-      {
-        method: 'POST',
-        body: {
-          part_id: Number(partForm.part_id),
-
-          job_card_task_id:
-            partForm.job_card_task_id
-              ? Number(partForm.job_card_task_id)
-              : null,
-
-          quantity: Number(partForm.quantity),
-
-          unit_price:
-            partForm.unit_price
-              ? Number(partForm.unit_price)
-              : null,
-
-          discount:
-            partForm.discount
-              ? Number(partForm.discount)
-              : 0,
-
-          notes:
-            partForm.notes || null,
-        },
-      }
-    )
-
-    partsModalOpen.value = false
-
-    resetPartForm()
-
-    await fetchParts()
-  } catch (err: any) {
-    console.error(err)
-
-    partsError.value =
-      err?.data?.message ||
-      err?.response?._data?.message ||
-      'Unable to add part.'
-  } finally {
-    partSaving.value = false
-  }
-}
-
 const taskModalOpen = ref(false)
 const editingTask = ref<JobCardTask | null>(null)
 const taskForm = reactive({
+  service_task_id: '',
   department_id: '',
   bay_id: '',
   assigned_to: '',
@@ -1128,6 +1311,9 @@ const fetchInvoice = async () => {
 }
 
 const resetTaskForm = () => {
+  taskForm.service_task_id = ''
+  serviceTaskMode.value = 'predefined'
+
   taskForm.department_id =
     jobCard.value?.department_id
       ? String(jobCard.value.department_id)
@@ -1148,10 +1334,15 @@ const resetTaskForm = () => {
   taskForm.notes = ''
 }
 
-const openCreateTask = () => {
+const openCreateTask = async () => {
   editingTask.value = null
   resetTaskForm()
   taskError.value = ''
+
+  if (serviceTasks.value.length === 0) {
+    await fetchServiceTasks()
+  }
+
   taskModalOpen.value = true
 }
 
@@ -1159,25 +1350,21 @@ const openEditTask = (
   task: JobCardTask
 ) => {
   editingTask.value = task
+  serviceTaskMode.value = 'custom'
 
-  taskForm.department_id =
-    String(task.department_id)
+  taskForm.service_task_id = ''
+  taskForm.department_id = String(task.department_id)
 
-  taskForm.bay_id =
-    task.bay_id
-      ? String(task.bay_id)
-      : ''
+  taskForm.bay_id = task.bay_id
+    ? String(task.bay_id)
+    : ''
 
-  taskForm.assigned_to =
-    task.assigned_to
-      ? String(task.assigned_to)
-      : ''
+  taskForm.assigned_to = task.assigned_to
+    ? String(task.assigned_to)
+    : ''
 
-  taskForm.title =
-    task.title || ''
-
-  taskForm.description =
-    task.description || ''
+  taskForm.title = task.title || ''
+  taskForm.description = task.description || ''
 
   taskForm.estimated_minutes =
     task.estimated_minutes !== null
@@ -1189,8 +1376,7 @@ const openEditTask = (
       ? String(task.labour_cost)
       : ''
 
-  taskForm.notes =
-    task.notes || ''
+  taskForm.notes = task.notes || ''
 
   taskError.value = ''
   taskModalOpen.value = true
@@ -1214,6 +1400,12 @@ const saveTask = async () => {
 
   try {
     const body = {
+      service_task_id:
+        serviceTaskMode.value === 'predefined' &&
+        taskForm.service_task_id
+          ? Number(taskForm.service_task_id)
+          : null,
+
       department_id: taskForm.department_id
         ? Number(taskForm.department_id)
         : null,
@@ -1228,21 +1420,17 @@ const saveTask = async () => {
 
       title: taskForm.title,
 
-      description:
-        taskForm.description || null,
+      description: taskForm.description || null,
 
-      estimated_minutes:
-        taskForm.estimated_minutes
-          ? Number(taskForm.estimated_minutes)
-          : null,
+      estimated_minutes: taskForm.estimated_minutes
+        ? Number(taskForm.estimated_minutes)
+        : null,
 
-      labour_cost:
-        taskForm.labour_cost
-          ? Number(taskForm.labour_cost)
-          : null,
+      labour_cost: taskForm.labour_cost
+        ? Number(taskForm.labour_cost)
+        : null,
 
-      notes:
-        taskForm.notes || null,
+      notes: taskForm.notes || null,
     }
 
     if (editingTask.value) {
@@ -1830,11 +2018,70 @@ const taskDepartmentEmployees = computed(() => {
   })
 })
 
+// Whatsapp Methods
+const openWhatsApp = async (type: string) => {
+  if (!jobCard.value?.id) {
+    return
+  }
+
+  try {
+    const response = await api(
+      `/api/admin/job-cards/${jobCard.value.id}/whatsapp`,
+      {
+        method: 'POST',
+        body: {
+          type,
+        },
+      }
+    )
+
+    const url = response?.url
+
+    if (!url) {
+      console.error(
+        'WhatsApp URL missing from response:',
+        response
+      )
+
+      alert('WhatsApp URL was not returned by the server.')
+      return
+    }
+
+    window.open(url, '_blank')
+  } catch (error: any) {
+    console.error('WhatsApp error:', error)
+
+    alert(
+      error?.response?.data?.message ||
+      'Unable to open WhatsApp.'
+    )
+  }
+}
+
 watch(
   () => taskForm.department_id,
   () => {
     taskForm.bay_id = ''
     taskForm.assigned_to = ''
+  }
+)
+// Watch Service task
+watch(
+  () => taskForm.service_task_id,
+  (serviceTaskId) => {
+    if (serviceTaskMode.value !== 'predefined') {
+      return
+    }
+
+    if (!serviceTaskId) {
+      return
+    }
+
+    const serviceTask = serviceTasks.value.find(
+      task => String(task.id) === String(serviceTaskId)
+    )
+
+    applyServiceTask(serviceTask || null)
   }
 )
 
@@ -2127,11 +2374,34 @@ onMounted(async () => {
                 </p>
               </div>
             </div>
+
+            <!-- Estimated Completion -->
+            <div class="mt-5 rounded-lg border border-gray-300 bg-gray-100 p-4">
+              <div class="text-sm text-gray-content/60">
+                Estimated Completion
+              </div>
+
+              <div class="mt-1 font-medium">
+                {{ jobCard?.estimated_completion_at || 'Not specified' }}
+              </div>
+            </div>
           </div>
         </div>
 
-        <!-- Workflow -->
+        <!-- Workflow  Status-->
         <div class="card border border-gray-300 bg-gray-100 shadow-xl">
+          <!-- temporary whatsapp actions -->
+          <div class=""whatsapp-action mb-4 border-b>
+            <button
+              type="button"
+              class="btn btn-success"
+              @click="openWhatsApp('job_card_created')"
+            >
+              <span>💬</span>
+              WhatsApp Customer
+            </button>
+          </div>
+
           <div class="card-body">
             <div class="flex items-center justify-between">
               <div>
@@ -2439,369 +2709,241 @@ onMounted(async () => {
         </div>
       </div>
 
-      <!-- Estimate Bill -->
-      <div class="card mt-6 border border-gray-300 bg-gray-100 shadow-xl">
-        <div class="card-body">
-          <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <h2 class="card-title">
-                Estimated Bill
-              </h2>
+      <!-- Billing Grid -->
+      <div class="grid grid-cols-1 items-start gap-4 xl:grid-cols-2">
 
-              <p class="text-sm text-gray-content/60">
-                Prepare and save the estimated bill for this job card.
-              </p>
-            </div>
+        <!-- Estimate Bill -->
+        <div class="card mt-4 border border-gray-300 bg-gray-100 shadow-md">
+          <div class="card-body p-3 sm:p-4">
+            <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h2 class="card-title">
+                  Estimated Bill
+                </h2>
 
-            <div
-              v-if="estimate"
-              class="badge badge-outline"
-            >
-              {{ estimate.estimate_number }}
-            </div>
-          </div>
+                <p class="text-sm text-gray-content/60">
+                  Prepare and save the estimated bill for this job card.
+                </p>
+              </div>
 
-          <!-- Loading -->
-          <div
-            v-if="estimateLoading"
-            class="flex justify-center py-8"
-          >
-            <span class="loading loading-spinner loading-md"></span>
-          </div>
-
-          <template v-else>
-            <!-- Error -->
-            <div
-              v-if="estimateError"
-              class="alert alert-error mt-4"
-            >
-              <span>{{ estimateError }}</span>
-            </div>
-
-            <!-- Add Estimate Item -->
-            <div class="mt-5 rounded-lg border border-gray-300 bg-gray-100 p-4">
-              <h3 class="font-semibold">
-                Add Estimate Item
-              </h3>
-
-              <div class="mt-4 grid grid-cols-1 gap-3 md:grid-cols-12">
-
-                <!-- Type -->
-                <div class="md:col-span-2">
-                  <label class="label">
-                    <span class="label-text">Type</span>
-                  </label>
-
-                  <select
-                    v-model="newEstimateItem.item_type"
-                    class="select select-bordered w-full"
-                  >
-                    <option value="labour">
-                      Labour
-                    </option>
-
-                    <option value="part">
-                      Part
-                    </option>
-                  </select>
-                </div>
-
-                <!-- Description -->
-                <div class="md:col-span-4">
-                  <label class="label">
-                    <span class="label-text">Description</span>
-                  </label>
-
-                  <input
-                    v-model="newEstimateItem.description"
-                    type="text"
-                    class="input input-bordered w-full"
-                    placeholder="e.g. Engine oil change"
-                    @keyup.enter="addEstimateItem"
-                  />
-                </div>
-
-                <!-- Quantity -->
-                <div class="md:col-span-1">
-                  <label class="label">
-                    <span class="label-text">Qty</span>
-                  </label>
-
-                  <input
-                    v-model="newEstimateItem.quantity"
-                    type="number"
-                    min="0.01"
-                    step="0.01"
-                    class="input input-bordered w-full"
-                  />
-                </div>
-
-                <!-- Unit Price -->
-                <div class="md:col-span-2">
-                  <label class="label">
-                    <span class="label-text">Unit Price</span>
-                  </label>
-
-                  <input
-                    v-model="newEstimateItem.unit_price"
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    class="input input-bordered w-full"
-                    placeholder="0.00"
-                  />
-                </div>
-
-                <!-- Discount -->
-                <div class="md:col-span-1">
-                  <label class="label">
-                    <span class="label-text">Discount</span>
-                  </label>
-
-                  <input
-                    v-model="newEstimateItem.discount"
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    class="input input-bordered w-full"
-                    placeholder="0"
-                  />
-                </div>
-
-                <!-- Add -->
-                <div class="flex items-end md:col-span-2">
-                  <button
-                    type="button"
-                    class="btn btn-primary w-full"
-                    @click="addEstimateItem"
-                  >
-                    + Add Item
-                  </button>
-                </div>
+              <div
+                v-if="estimate"
+                class="badge badge-outline"
+              >
+                {{ estimate.estimate_number }}
               </div>
             </div>
 
-            <!-- Estimate Items -->
-            <div class="mt-5">
-              <div class="mb-3 flex items-center justify-between">
-                <h3 class="font-semibold">
-                  Estimate Items
+            <!-- Loading -->
+            <div
+              v-if="estimateLoading"
+              class="flex justify-center py-8"
+            >
+              <span class="loading loading-spinner loading-md"></span>
+            </div>
+
+            <template v-else>
+              <!-- Error -->
+              <div
+                v-if="estimateError"
+                class="alert alert-error mt-4"
+              >
+                <span>{{ estimateError }}</span>
+              </div>
+
+              <!-- Add Estimate Item -->
+              <div class="collapse rounded-lg border border-gray-300">
+                <input type="checkbox" />
+                <h3 class="collapse-title flex items-center justify-between text-sm font-semibold bg-gray-200 p-3 border-b border-gray-300">
+                  Add Estimate Item
+                  <Icon name="i-lucide-chevron-down" class="text-xl" />
                 </h3>
 
-                <span class="text-sm text-gray-content/60">
-                  {{ estimateItems.length }} item{{ estimateItems.length === 1 ? '' : 's' }}
-                </span>
-              </div>
+                <div class="grid grid-cols-6 gap-2 p-3 collapse-content">
 
-              <!-- Desktop table -->
-              <div
-                v-if="estimateItems.length"
-                class="hidden overflow-x-auto rounded-lg border border-gray-300 md:block"
-              >
-                <table class="table">
-                  <thead>
-                    <tr>
-                      <th>Type</th>
-                      <th>Description</th>
-                      <th class="w-24">Qty</th>
-                      <th class="w-32">Unit Price</th>
-                      <th class="w-32">Discount</th>
-                      <th class="text-right">Total</th>
-                    </tr>
-                  </thead>
+                  <!-- Type -->
+                  <div class="col-span-3">
+                    <label class="label py-1">
+                      <span class="label-text text-xs">Type</span>
+                    </label>
 
-                  <tbody>
-                    <tr
-                      v-for="(item, index) in estimateItems"
-                      :key="item.id"
+                    <select
+                      v-model="newEstimateItem.item_type"
+                      class="select select-bordered select-sm w-full"
                     >
-                      <td>
-                        <select
-                          v-model="item.item_type"
-                          class="select select-bordered select-sm w-full"
-                        >
-                          <option value="labour">
-                            Labour
-                          </option>
+                      <option value="labour">Labour</option>
+                      <option value="part">Part</option>
+                    </select>
+                  </div>
 
-                          <option value="part">
-                            Part
-                          </option>
-                        </select>
-                      </td>
+                  <!-- Description -->
+                  <div class="col-span-3">
+                    <label class="label py-1">
+                      <span class="label-text text-xs">Description</span>
+                    </label>
 
-                      <td>
-                        <input
-                          v-model="item.description"
-                          type="text"
-                          class="input input-bordered input-sm w-full"
-                        />
-                      </td>
+                    <input
+                      v-model="newEstimateItem.description"
+                      type="text"
+                      class="input input-bordered input-sm w-full"
+                      placeholder="e.g. Engine oil change"
+                      @keyup.enter="addEstimateItem"
+                    />
+                  </div>
 
-                      <td>
-                        <input
-                          v-model="item.quantity"
-                          type="number"
-                          min="0.01"
-                          step="0.01"
-                          class="input input-bordered input-sm w-full"
-                        />
-                      </td>
+                  <!-- Quantity -->
+                  <div class="col-span-2">
+                    <label class="label py-1">
+                      <span class="label-text text-xs">Qty</span>
+                    </label>
 
-                      <td>
-                        <input
-                          v-model="item.unit_price"
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          class="input input-bordered input-sm w-full"
-                        />
-                      </td>
+                    <input
+                      v-model="newEstimateItem.quantity"
+                      type="number"
+                      min="0.01"
+                      step="0.01"
+                      class="input input-bordered input-sm w-full"
+                    />
+                  </div>
 
-                      <td>
-                        <input
-                          v-model="item.discount"
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          class="input input-bordered input-sm w-full"
-                        />
-                      </td>
+                  <!-- Unit Price -->
+                  <div class="col-span-2">
+                    <label class="label py-1">
+                      <span class="label-text text-xs">Unit Price</span>
+                    </label>
 
-                      <td class="text-right font-semibold">
-                        ₹{{ estimateItemTotal(item).toFixed(2) }}
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
+                    <input
+                      v-model="newEstimateItem.unit_price"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      class="input input-bordered input-sm w-full"
+                      placeholder="0.00"
+                    />
+                  </div>
+
+                  <!-- Discount -->
+                  <div class="col-span-2">
+                    <label class="label py-1">
+                      <span class="label-text text-xs">Discount</span>
+                    </label>
+
+                    <input
+                      v-model="newEstimateItem.discount"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      class="input input-bordered input-sm w-full"
+                      placeholder="0"
+                    />
+                  </div>
+
+                  <!-- Add Button -->
+                  <div class="col-span-2">
+                    <button
+                      type="button"
+                      class="btn btn-primary btn-sm w-full"
+                      @click="addEstimateItem"
+                    >
+                      + Add Estimate Item
+                    </button>
+                  </div>
+
+                </div>
               </div>
 
-              <!-- Mobile cards -->
-              <div
-                v-if="estimateItems.length"
-                class="space-y-3 md:hidden"
-              >
+              <!-- Estimate Items -->
+              <div class="mt-3">
+
+                <div class="mb-2 flex items-center justify-between">
+                  <h3 class="text-sm font-semibold">
+                    Estimate Items
+                  </h3>
+
+                  <span class="text-xs text-gray-content/60">
+                    {{ estimateItems.length }} items
+                  </span>
+                </div>
+
                 <div
-                  v-for="item in estimateItems"
-                  :key="item.id"
-                  class="rounded-lg border border-gray-300 bg-gray-100 p-4"
+                  v-if="estimateItems.length"
+                  class="space-y-2"
                 >
-                  <div class="grid grid-cols-2 gap-3">
+                  <div
+                    v-for="item in estimateItems"
+                    :key="item.id"
+                    class="rounded-lg border border-gray-300 bg-base-100 p-3 relative"
+                  >
 
-                    <div class="col-span-2">
-                      <label class="label">
-                        <span class="label-text">Type</span>
-                      </label>
+                    <!-- Item Header -->
+                    <div class="flex items-start justify-between gap-2">
 
-                      <select
-                        v-model="item.item_type"
-                        class="select select-bordered w-full"
-                      >
-                        <option value="labour">
-                          Labour
-                        </option>
-
-                        <option value="part">
-                          Part
-                        </option>
-                      </select>
-                    </div>
-
-                    <div class="col-span-2">
-                      <label class="label">
-                        <span class="label-text">Description</span>
-                      </label>
-
-                      <input
-                        v-model="item.description"
-                        type="text"
-                        class="input input-bordered w-full"
-                      />
-                    </div>
-
-                    <div>
-                      <label class="label">
-                        <span class="label-text">Qty</span>
-                      </label>
-
-                      <input
-                        v-model="item.quantity"
-                        type="number"
-                        min="0.01"
-                        step="0.01"
-                        class="input input-bordered w-full"
-                      />
-                    </div>
-
-                    <div>
-                      <label class="label">
-                        <span class="label-text">Unit Price</span>
-                      </label>
-
-                      <input
-                        v-model="item.unit_price"
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        class="input input-bordered w-full"
-                      />
-                    </div>
-
-                    <div>
-                      <label class="label">
-                        <span class="label-text">Discount</span>
-                      </label>
-
-                      <input
-                        v-model="item.discount"
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        class="input input-bordered w-full"
-                      />
-                    </div>
-
-                    <div class="flex items-end justify-end">
-                      <div class="text-right">
-                        <div class="text-xs text-gray-content/60">
-                          Total
+                      <div class="min-w-0">
+                        <div class="text-sm font-semibold">
+                          {{ item.description }}
                         </div>
 
-                        <div class="font-bold">
-                          ₹{{ estimateItemTotal(item).toFixed(2) }}
+                        <div class="text-xs bg-pink-500 text-center rounded px-2 text-white">
+                          {{ item.item_type === 'labour' ? 'Labour' : 'Part' }}
                         </div>
                       </div>
+
+                      <button
+                        type="button"
+                        class="btn border border-red-600  btn-xs text-red-500"
+                        @click="removeEstimateItem(item)"
+                      >
+                        Remove
+                      </button>
+
+                    </div>
+
+                    <!-- Item Details -->
+                    <div class="mt-2 overflow-x-auto">
+                      <table class="table table-xs">
+                        <thead class="bg-gray-200">
+                          <tr>
+                            <th>Qty</th>
+                            <th>Price</th>
+                            <th>Discount</th>
+                            <th>Total</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <tr>
+                            <td>{{ item.quantity }}</td>
+                            <td>₹{{ Number(item.unit_price).toFixed(2) }}</td>
+                            <td>₹{{ Number(item.discount || 0).toFixed(2) }}</td>
+                            <td>₹{{ estimateItemTotal(item).toFixed(2) }}</td>
+                          </tr>
+                        </tbody>
+                      </table>
                     </div>
 
                   </div>
                 </div>
+
+                <div
+                  v-else
+                  class="rounded-lg border border-dashed border-gray-300 py-5 text-center text-xs text-gray-content/60"
+                >
+                  No estimate items added yet.
+                </div>
+
               </div>
 
-              <!-- Empty -->
-              <div
-                v-else
-                class="rounded-lg border border-dashed border-gray-300 py-8 text-center text-sm text-gray-content/60"
-              >
-                No estimate items added yet.
-              </div>
-            </div>
+              <!-- Estimate Summary -->
+              <div class="mt-3 rounded-lg border border-gray-300 bg-base-100 p-3">
 
-            <!-- Estimate Summary -->
-            <div class="mt-5 flex justify-end">
-              <div class="w-full max-w-md rounded-lg border border-gray-300 bg-gray-100 p-4">
-
-                <div class="flex justify-between py-1">
-                  <span class="text-gray-content/70">
-                    Subtotal
-                  </span>
-
+                <div class="flex justify-between py-1 text-xs">
+                  <span class="text-gray-content/70">Subtotal</span>
                   <span class="font-medium">
                     ₹{{ estimateSubtotal.toFixed(2) }}
                   </span>
                 </div>
 
-                <div class="flex items-center justify-between gap-4 py-2">
-                  <span class="text-gray-content/70">
+                <div class="flex items-center justify-between gap-2 py-1">
+                  <span class="text-xs text-gray-content/70">
                     Overall Discount
                   </span>
 
@@ -2810,12 +2952,12 @@ onMounted(async () => {
                     type="number"
                     min="0"
                     step="0.01"
-                    class="input input-bordered input-sm w-32 text-right"
+                    class="input input-bordered input-sm w-24 text-right"
                   />
                 </div>
 
-                <div class="flex items-center justify-between gap-4 py-2">
-                  <span class="text-gray-content/70">
+                <div class="flex items-center justify-between gap-2 py-1">
+                  <span class="text-xs text-gray-content/70">
                     Tax
                   </span>
 
@@ -2824,260 +2966,336 @@ onMounted(async () => {
                     type="number"
                     min="0"
                     step="0.01"
-                    class="input input-bordered input-sm w-32 text-right"
+                    class="input input-bordered input-sm w-24 text-right"
                   />
                 </div>
 
-                <div class="divider my-2"></div>
+                <div class="divider my-1"></div>
 
-                <div class="flex justify-between text-lg font-bold">
-                  <span>
-                    Estimated Total
-                  </span>
-
-                  <span>
-                    ₹{{ estimateTotal.toFixed(2) }}
-                  </span>
+                <div class="flex justify-between text-base font-bold">
+                  <span>Estimated Total</span>
+                  <span>₹{{ estimateTotal.toFixed(2) }}</span>
                 </div>
-              </div>
-            </div>
 
-            <!-- Estimated Completion -->
-            <div class="mt-5 rounded-lg border border-gray-300 bg-gray-100 p-4">
-              <div class="text-sm text-gray-content/60">
-                Estimated Completion
               </div>
 
-              <div class="mt-1 font-medium">
-                {{ jobCard?.estimated_completion_at || 'Not specified' }}
+              <!-- Estimate Actions -->
+              <div class="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+
+                <button
+                  type="button"
+                  class="btn btn-primary btn-sm"
+                  :disabled="estimateSaving || estimateItems.length === 0"
+                  @click="saveEstimate"
+                >
+                  <span
+                    v-if="estimateSaving"
+                    class="loading loading-spinner loading-xs"
+                  ></span>
+
+                  {{ estimateSaving ? 'Saving...' : 'Save Estimate' }}
+                </button>
+
+                <button
+                  type="button"
+                  class="btn bg-green-600 btn-sm text-white"
+                  :disabled="!estimate"
+                  @click="openWhatsApp('estimate')"
+                >
+                  <Icon name="ic:baseline-whatsapp" size="20"/>
+                  Share Estimate
+                </button>
+
               </div>
-            </div>
 
-            <!-- Save -->
-            <div class="mt-5 flex justify-end">
-              <button
-                type="button"
-                class="btn btn-primary"
-                :disabled="estimateSaving || estimateItems.length === 0"
-                @click="saveEstimate"
-              >
-                <span
-                  v-if="estimateSaving"
-                  class="loading loading-spinner loading-sm"
-                ></span>
-
-                {{ estimateSaving ? 'Saving...' : 'Save Estimated Bill' }}
-              </button>
-            </div>
-          </template>
+            </template>
+          </div>
         </div>
-      </div>
 
-      <!-- Final Bill -->
-      <div class="card shadow-xl">
-        <div class="card-body">
+        <!-- Final Bill -->
+        <div class="card mt-4 border border-gray-300 bg-gray-100 shadow-md">
+          <div class="card-body p-3 sm:p-4">
 
-          <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <h2 class="card-title">
-                Final Bill
-              </h2>
+            <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h2 class="card-title">
+                  Final Bill
+                </h2>
 
-              <p class="text-sm text-base-content/60">
-                Final amount based on the actual work and parts used.
-              </p>
-            </div>
-
-            <div class="flex items-center gap-2">
-              <div
-                v-if="invoice"
-                class="badge badge-outline"
-              >
-                {{ invoice.invoice_number }}
+                <p class="text-sm text-base-content/60">
+                  Final amount based on the actual work and parts used.
+                </p>
               </div>
 
-              <button
-                type="button"
-                class="btn btn-outline btn-sm"
-                :disabled="invoiceGenerating"
-                @click="generateInvoice"
-              >
-                <span
-                  v-if="invoiceGenerating"
-                  class="loading loading-spinner loading-xs"
-                ></span>
+              <div class="flex items-center gap-2">
+                <div
+                  v-if="invoice"
+                  class="badge badge-outline"
+                >
+                  {{ invoice.invoice_number }}
+                </div>
 
-                {{
-                  invoiceGenerating
-                    ? 'Generating...'
-                    : 'Generate from Job Card'
-                }}
-              </button>
+                <button
+                  type="button"
+                  class="btn btn-outline btn-sm"
+                  :disabled="invoiceGenerating"
+                  @click="generateInvoice"
+                >
+                  <span
+                    v-if="invoiceGenerating"
+                    class="loading loading-spinner loading-xs"
+                  ></span>
+
+                  {{
+                    invoiceGenerating
+                      ? 'Generating...'
+                      : 'Generate from Job Card'
+                  }}
+                </button>
+              </div>
             </div>
-          </div>
 
-          <!-- Loading -->
-          <div
-            v-if="invoiceLoading"
-            class="flex justify-center py-8"
-          >
-            <span class="loading loading-spinner loading-md"></span>
-          </div>
-
-          <template v-else>
-
-            <!-- Error -->
+            <!-- Loading -->
             <div
-              v-if="invoiceError"
-              class="alert alert-error mt-4"
+              v-if="invoiceLoading"
+              class="flex justify-center py-8"
             >
-              <span>{{ invoiceError }}</span>
+              <span class="loading loading-spinner loading-md"></span>
             </div>
 
-            <!-- Add Final Bill Item -->
-            <div class="mt-5 rounded-lg border border-gray-300 bg-gray-100 p-4">
-              <h3 class="font-semibold">
-                Add Final Bill Item
-              </h3>
+            <template v-else>
 
-              <div class="mt-4 grid grid-cols-1 gap-3 md:grid-cols-12">
-
-                <!-- Type -->
-                <div class="md:col-span-2">
-                  <label class="label">
-                    <span class="label-text">Type</span>
-                  </label>
-
-                  <select
-                    v-model="newInvoiceItem.item_type"
-                    class="select select-bordered w-full"
-                  >
-                    <option value="labour">
-                      Labour
-                    </option>
-
-                    <option value="part">
-                      Part
-                    </option>
-                  </select>
-                </div>
-
-                <!-- Description -->
-                <div class="md:col-span-4">
-                  <label class="label">
-                    <span class="label-text">Description</span>
-                  </label>
-
-                  <input
-                    v-model="newInvoiceItem.description"
-                    type="text"
-                    class="input input-bordered w-full"
-                    placeholder="e.g. Engine oil change"
-                    @keyup.enter="addInvoiceItem"
-                  />
-                </div>
-
-                <!-- Quantity -->
-                <div class="md:col-span-1">
-                  <label class="label">
-                    <span class="label-text">Qty</span>
-                  </label>
-
-                  <input
-                    v-model="newInvoiceItem.quantity"
-                    type="number"
-                    min="0.01"
-                    step="0.01"
-                    class="input input-bordered w-full"
-                  />
-                </div>
-
-                <!-- Unit Price -->
-                <div class="md:col-span-2">
-                  <label class="label">
-                    <span class="label-text">Unit Price</span>
-                  </label>
-
-                  <input
-                    v-model="newInvoiceItem.unit_price"
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    class="input input-bordered w-full"
-                    placeholder="0.00"
-                  />
-                </div>
-
-                <!-- Discount -->
-                <div class="md:col-span-1">
-                  <label class="label">
-                    <span class="label-text">Discount</span>
-                  </label>
-
-                  <input
-                    v-model="newInvoiceItem.discount"
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    class="input input-bordered w-full"
-                    placeholder="0"
-                  />
-                </div>
-
-                <!-- Add -->
-                <div class="flex items-end md:col-span-2">
-                  <button
-                    type="button"
-                    class="btn btn-primary w-full"
-                    @click="addInvoiceItem"
-                  >
-                    + Add Item
-                  </button>
-                </div>
-
+              <!-- Error -->
+              <div
+                v-if="invoiceError"
+                class="alert alert-error mt-4"
+              >
+                <span>{{ invoiceError }}</span>
               </div>
-            </div>
 
-            <!-- Invoice Items -->
-            <div class="mt-5">
-
-              <div class="mb-3 flex items-center justify-between">
-                <h3 class="font-semibold">
-                  Final Bill Items
+              <!-- Add Final Bill Item -->
+              <div class="collapse rounded-lg border border-gray-300">
+                <input type="checkbox" />
+                <h3 class="collapse-title flex items-center justify-between text-sm font-semibold bg-gray-200 p-3 border-b border-gray-300">
+                  Add Final Bill Item
+                  <Icon name="i-lucide-chevron-down" class="text-xl" />
                 </h3>
 
-                <span class="text-sm text-gray-content/60">
-                  {{ invoiceItems.length }}
-                  item{{ invoiceItems.length === 1 ? '' : 's' }}
-                </span>
+                <div class="grid grid-cols-6 gap-2 p-3 collapse-content">
+
+                  <!-- Type -->
+                  <div class="md:col-span-2">
+                    <label class="label py-1">
+                      <span class="label-text text-xs">Type</span>
+                    </label>
+
+                    <select
+                      v-model="newInvoiceItem.item_type"
+                      class="select select-bordered w-full select-sm"
+                    >
+                      <option value="labour">
+                        Labour
+                      </option>
+
+                      <option value="part">
+                        Part
+                      </option>
+                    </select>
+                  </div>
+
+                  <!-- Description -->
+                  <div class="md:col-span-4">
+                    <label class="label">
+                      <span class="label-text text-xs">Description</span>
+                    </label>
+
+                    <input
+                      v-model="newInvoiceItem.description"
+                      type="text"
+                      class="input input-bordered w-full input-sm"
+                      placeholder="e.g. Engine oil change"
+                      @keyup.enter="addInvoiceItem"
+                    />
+                  </div>
+
+                  <!-- Quantity -->
+                  <div class="md:col-span-1">
+                    <label class="label">
+                      <span class="label-text text-xs">Qty</span>
+                    </label>
+
+                    <input
+                      v-model="newInvoiceItem.quantity"
+                      type="number"
+                      min="0.01"
+                      step="0.01"
+                      class="input input-sm input-bordered w-full"
+                    />
+                  </div>
+
+                  <!-- Unit Price -->
+                  <div class="md:col-span-2">
+                    <label class="label">
+                      <span class="label-text text-xs">Unit Price</span>
+                    </label>
+
+                    <input
+                      v-model="newInvoiceItem.unit_price"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      class="input input-bordered w-full input-sm"
+                      placeholder="0.00"
+                    />
+                  </div>
+
+                  <!-- Discount -->
+                  <div class="md:col-span-1">
+                    <label class="label">
+                      <span class="label-text text-xs">Discount</span>
+                    </label>
+
+                    <input
+                      v-model="newInvoiceItem.discount"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      class="input input-sm input-bordered w-full"
+                      placeholder="0"
+                    />
+                  </div>
+
+                  <!-- Add -->
+                  <div class="flex items-end md:col-span-2">
+                    <button
+                      type="button"
+                      class="btn btn-primary btn-sm w-full"
+                      @click="addInvoiceItem"
+                    >
+                      + Add Item
+                    </button>
+                  </div>
+
+                </div>
               </div>
 
-              <!-- Desktop -->
-              <div
-                v-if="invoiceItems.length"
-                class="hidden overflow-x-auto rounded-lg border border-gray-300 md:block"
-              >
-                <table class="table">
-                  <thead>
-                    <tr>
-                      <th>Type</th>
-                      <th>Description</th>
-                      <th class="w-24">Qty</th>
-                      <th class="w-32">Unit Price</th>
-                      <th class="w-32">Discount</th>
-                      <th class="text-right">Total</th>
-                    </tr>
-                  </thead>
+              <!-- Invoice Items -->
+              <div class="mt-5">
 
-                  <tbody>
-                    <tr
-                      v-for="item in invoiceItems"
-                      :key="item.id"
-                    >
-                      <td>
+                <div class="mb-3 flex items-center justify-between">
+                  <h3 class="font-semibold">
+                    Final Bill Items
+                  </h3>
+
+                  <span class="text-sm text-gray-content/60">
+                    {{ invoiceItems.length }}
+                    item{{ invoiceItems.length === 1 ? '' : 's' }}
+                  </span>
+                </div>
+
+                <!-- Desktop -->
+                <div
+                  v-if="invoiceItems.length"
+                  class="hidden overflow-x-auto rounded-lg border border-gray-300 md:block"
+                >
+                  <table class="table">
+                    <thead>
+                      <tr>
+                        <th>Type</th>
+                        <th>Description</th>
+                        <th class="w-24">Qty</th>
+                        <th class="w-32">Unit Price</th>
+                        <th class="w-32">Discount</th>
+                        <th class="text-right">Total</th>
+                      </tr>
+                    </thead>
+
+                    <tbody>
+                      <tr
+                        v-for="item in invoiceItems"
+                        :key="item.id"
+                      >
+                        <td>
+                          <select
+                            v-model="item.item_type"
+                            class="select select-bordered select-sm w-full"
+                          >
+                            <option value="labour">
+                              Labour
+                            </option>
+
+                            <option value="part">
+                              Part
+                            </option>
+                          </select>
+                        </td>
+
+                        <td>
+                          <input
+                            v-model="item.description"
+                            type="text"
+                            class="input input-bordered input-sm w-full"
+                          />
+                        </td>
+
+                        <td>
+                          <input
+                            v-model="item.quantity"
+                            type="number"
+                            min="0.01"
+                            step="0.01"
+                            class="input input-bordered input-sm w-full"
+                          />
+                        </td>
+
+                        <td>
+                          <input
+                            v-model="item.unit_price"
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            class="input input-bordered input-sm w-full"
+                          />
+                        </td>
+
+                        <td>
+                          <input
+                            v-model="item.discount"
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            class="input input-bordered input-sm w-full"
+                          />
+                        </td>
+
+                        <td class="text-right font-semibold">
+                          ₹{{ invoiceItemTotal(item).toFixed(2) }}
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                <!-- Mobile -->
+                <div
+                  v-if="invoiceItems.length"
+                  class="space-y-3 md:hidden"
+                >
+                  <div
+                    v-for="item in invoiceItems"
+                    :key="item.id"
+                    class="rounded-lg border border-gray-300 bg-gray-100 p-4"
+                  >
+                    <div class="grid grid-cols-2 gap-3">
+
+                      <div class="col-span-2">
+                        <label class="label">
+                          <span class="label-text">Type</span>
+                        </label>
+
                         <select
                           v-model="item.item_type"
-                          class="select select-bordered select-sm w-full"
+                          class="select select-bordered w-full"
                         >
                           <option value="labour">
                             Labour
@@ -3087,297 +3305,235 @@ onMounted(async () => {
                             Part
                           </option>
                         </select>
-                      </td>
+                      </div>
 
-                      <td>
+                      <div class="col-span-2">
+                        <label class="label">
+                          <span class="label-text">Description</span>
+                        </label>
+
                         <input
                           v-model="item.description"
                           type="text"
-                          class="input input-bordered input-sm w-full"
+                          class="input input-bordered w-full"
                         />
-                      </td>
+                      </div>
 
-                      <td>
+                      <div>
+                        <label class="label">
+                          <span class="label-text">Qty</span>
+                        </label>
+
                         <input
                           v-model="item.quantity"
                           type="number"
                           min="0.01"
                           step="0.01"
-                          class="input input-bordered input-sm w-full"
+                          class="input input-bordered w-full"
                         />
-                      </td>
+                      </div>
 
-                      <td>
+                      <div>
+                        <label class="label">
+                          <span class="label-text">Unit Price</span>
+                        </label>
+
                         <input
                           v-model="item.unit_price"
                           type="number"
                           min="0"
                           step="0.01"
-                          class="input input-bordered input-sm w-full"
+                          class="input input-bordered w-full"
                         />
-                      </td>
+                      </div>
 
-                      <td>
+                      <div>
+                        <label class="label">
+                          <span class="label-text">Discount</span>
+                        </label>
+
                         <input
                           v-model="item.discount"
                           type="number"
                           min="0"
                           step="0.01"
-                          class="input input-bordered input-sm w-full"
+                          class="input input-bordered w-full"
                         />
-                      </td>
+                      </div>
 
-                      <td class="text-right font-semibold">
-                        ₹{{ invoiceItemTotal(item).toFixed(2) }}
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
+                      <div class="flex items-end justify-end">
+                        <div class="text-right">
+                          <div class="text-xs text-gray-content/60">
+                            Total
+                          </div>
 
-              <!-- Mobile -->
-              <div
-                v-if="invoiceItems.length"
-                class="space-y-3 md:hidden"
-              >
-                <div
-                  v-for="item in invoiceItems"
-                  :key="item.id"
-                  class="rounded-lg border border-gray-300 bg-gray-100 p-4"
-                >
-                  <div class="grid grid-cols-2 gap-3">
-
-                    <div class="col-span-2">
-                      <label class="label">
-                        <span class="label-text">Type</span>
-                      </label>
-
-                      <select
-                        v-model="item.item_type"
-                        class="select select-bordered w-full"
-                      >
-                        <option value="labour">
-                          Labour
-                        </option>
-
-                        <option value="part">
-                          Part
-                        </option>
-                      </select>
-                    </div>
-
-                    <div class="col-span-2">
-                      <label class="label">
-                        <span class="label-text">Description</span>
-                      </label>
-
-                      <input
-                        v-model="item.description"
-                        type="text"
-                        class="input input-bordered w-full"
-                      />
-                    </div>
-
-                    <div>
-                      <label class="label">
-                        <span class="label-text">Qty</span>
-                      </label>
-
-                      <input
-                        v-model="item.quantity"
-                        type="number"
-                        min="0.01"
-                        step="0.01"
-                        class="input input-bordered w-full"
-                      />
-                    </div>
-
-                    <div>
-                      <label class="label">
-                        <span class="label-text">Unit Price</span>
-                      </label>
-
-                      <input
-                        v-model="item.unit_price"
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        class="input input-bordered w-full"
-                      />
-                    </div>
-
-                    <div>
-                      <label class="label">
-                        <span class="label-text">Discount</span>
-                      </label>
-
-                      <input
-                        v-model="item.discount"
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        class="input input-bordered w-full"
-                      />
-                    </div>
-
-                    <div class="flex items-end justify-end">
-                      <div class="text-right">
-                        <div class="text-xs text-gray-content/60">
-                          Total
-                        </div>
-
-                        <div class="font-bold">
-                          ₹{{ invoiceItemTotal(item).toFixed(2) }}
+                          <div class="font-bold">
+                            ₹{{ invoiceItemTotal(item).toFixed(2) }}
+                          </div>
                         </div>
                       </div>
+
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Empty -->
+                <div
+                  v-else
+                  class="rounded-lg border border-dashed border-gray-300 py-8 text-center text-sm text-gray-content/60"
+                >
+                  No final bill items added yet.
+                </div>
+
+              </div>
+
+              <!-- Invoice Summary -->
+              <div class="mt-5 flex justify-end">
+                <div class="w-full rounded-lg border border-gray-300 bg-gray-100 p-4">
+
+                  <div class="flex justify-between py-1">
+                    <span class="text-gray-content/70">
+                      Subtotal
+                    </span>
+
+                    <span class="font-medium">
+                      ₹{{ invoiceSubtotal.toFixed(2) }}
+                    </span>
+                  </div>
+
+                  <div class="flex items-center justify-between gap-4 py-2">
+                    <span class="text-gray-content/70 text-sm">
+                      Overall Discount
+                    </span>
+
+                    <input
+                      v-model="invoiceForm.discount"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      class="input input-bordered input-sm w-32 text-right"
+                    />
+                  </div>
+
+                  <div class="flex items-center justify-between gap-4 py-2">
+                    <span class="text-gray-content/70 text-sm">
+                      Tax
+                    </span>
+
+                    <input
+                      v-model="invoiceForm.tax"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      class="input input-bordered input-sm w-32 text-right"
+                    />
+                  </div>
+
+                  <div class="divider my-2"></div>
+
+                  <div class="flex justify-between text-sm font-bold">
+                    <span>
+                      Final Total
+                    </span>
+
+                    <span>
+                      ₹{{ invoiceTotal.toFixed(2) }}
+                    </span>
+                  </div>
+
+                </div>
+              </div>
+
+              <!-- Estimated vs Final -->
+              <div
+                v-if="estimate"
+                class="mt-5 rounded-lg border border-gray-300 bg-gray-100 p-4"
+              >
+                <h3 class="font-semibold">
+                  Estimate vs Final
+                </h3>
+
+                <div class="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
+
+                  <div>
+                    <div class="text-sm text-gray-content/60">
+                      Estimated Bill
                     </div>
 
+                    <div class="text-lg font-bold">
+                      ₹{{ Number(estimate.total).toFixed(2) }}
+                    </div>
                   </div>
+
+                  <div>
+                    <div class="text-sm text-gray-content/60">
+                      Final Bill
+                    </div>
+
+                    <div class="text-lg font-bold">
+                      ₹{{ invoiceTotal.toFixed(2) }}
+                    </div>
+                  </div>
+
+                  <div>
+                    <div class="text-sm text-gray-content/60">
+                      Difference
+                    </div>
+
+                    <div class="text-lg font-bold">
+                      ₹{{
+                        (
+                          invoiceTotal -
+                          Number(estimate.total)
+                        ).toFixed(2)
+                      }}
+                    </div>
+                  </div>
+
                 </div>
               </div>
 
-              <!-- Empty -->
-              <div
-                v-else
-                class="rounded-lg border border-dashed border-gray-300 py-8 text-center text-sm text-gray-content/60"
-              >
-                No final bill items added yet.
+              <!-- Save -->
+              <div class="mt-5 flex justify-end gap-3">
+                <button
+                  type="button"
+                  class="btn btn-primary btn-sm"
+                  :disabled="
+                    invoiceSaving ||
+                    invoiceItems.length === 0
+                  "
+                  @click="saveInvoice"
+                >
+                  <span
+                    v-if="invoiceSaving"
+                    class="loading loading-spinner loading-sm"
+                  ></span>
+
+                  {{
+                    invoiceSaving
+                      ? 'Saving...'
+                      : 'Save Final Bill'
+                  }}
+                </button>
+
+                <button
+                  type="button"
+                  class="btn bg-green-600 btn-sm text-white"
+                  :disabled="
+                    invoiceSaving ||
+                    invoiceItems.length === 0
+                  "
+                  @click="openWhatsApp('final')"
+                >
+                  <Icon name="ic:baseline-whatsapp" size="20"/>
+                  Share Final Bill
+                </button>
               </div>
 
-            </div>
-
-            <!-- Invoice Summary -->
-            <div class="mt-5 flex justify-end">
-              <div class="w-full max-w-md rounded-lg border border-gray-300 bg-gray-100 p-4">
-
-                <div class="flex justify-between py-1">
-                  <span class="text-gray-content/70">
-                    Subtotal
-                  </span>
-
-                  <span class="font-medium">
-                    ₹{{ invoiceSubtotal.toFixed(2) }}
-                  </span>
-                </div>
-
-                <div class="flex items-center justify-between gap-4 py-2">
-                  <span class="text-gray-content/70">
-                    Overall Discount
-                  </span>
-
-                  <input
-                    v-model="invoiceForm.discount"
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    class="input input-bordered input-sm w-32 text-right"
-                  />
-                </div>
-
-                <div class="flex items-center justify-between gap-4 py-2">
-                  <span class="text-gray-content/70">
-                    Tax
-                  </span>
-
-                  <input
-                    v-model="invoiceForm.tax"
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    class="input input-bordered input-sm w-32 text-right"
-                  />
-                </div>
-
-                <div class="divider my-2"></div>
-
-                <div class="flex justify-between text-lg font-bold">
-                  <span>
-                    Final Total
-                  </span>
-
-                  <span>
-                    ₹{{ invoiceTotal.toFixed(2) }}
-                  </span>
-                </div>
-
-              </div>
-            </div>
-
-            <!-- Estimated vs Final -->
-            <div
-              v-if="estimate"
-              class="mt-5 rounded-lg border border-gray-300 bg-gray-100 p-4"
-            >
-              <h3 class="font-semibold">
-                Estimate vs Final
-              </h3>
-
-              <div class="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
-
-                <div>
-                  <div class="text-sm text-gray-content/60">
-                    Estimated Bill
-                  </div>
-
-                  <div class="text-lg font-bold">
-                    ₹{{ Number(estimate.total).toFixed(2) }}
-                  </div>
-                </div>
-
-                <div>
-                  <div class="text-sm text-gray-content/60">
-                    Final Bill
-                  </div>
-
-                  <div class="text-lg font-bold">
-                    ₹{{ invoiceTotal.toFixed(2) }}
-                  </div>
-                </div>
-
-                <div>
-                  <div class="text-sm text-gray-content/60">
-                    Difference
-                  </div>
-
-                  <div class="text-lg font-bold">
-                    ₹{{
-                      (
-                        invoiceTotal -
-                        Number(estimate.total)
-                      ).toFixed(2)
-                    }}
-                  </div>
-                </div>
-
-              </div>
-            </div>
-
-            <!-- Save -->
-            <div class="mt-5 flex justify-end">
-              <button
-                type="button"
-                class="btn btn-primary"
-                :disabled="
-                  invoiceSaving ||
-                  invoiceItems.length === 0
-                "
-                @click="saveInvoice"
-              >
-                <span
-                  v-if="invoiceSaving"
-                  class="loading loading-spinner loading-sm"
-                ></span>
-
-                {{
-                  invoiceSaving
-                    ? 'Saving...'
-                    : 'Save Final Bill'
-                }}
-              </button>
-            </div>
-
-          </template>
+            </template>
+          </div>
         </div>
+
       </div>
 
       <!-- Tasks / Services -->
@@ -3465,7 +3621,7 @@ onMounted(async () => {
             </button>
           </div>
 
-          <!-- Tasks -->
+          <!-- Tasks Listing -->
           <div
             v-else
             class="mt-5 space-y-3"
@@ -3487,6 +3643,13 @@ onMounted(async () => {
                     <h3 class="font-semibold">
                       {{ task.title }}
                     </h3>
+
+                    <span
+                      v-if="task.service_task"
+                      class="badge badge-sm badge-outline"
+                    >
+                      Predefined
+                    </span>
 
                     <span
                       class="badge badge-sm"
@@ -3740,7 +3903,6 @@ onMounted(async () => {
               class="rounded-xl border border-gray-300 bg-gray-200 p-4"
             >
               <div class="flex flex-col gap-4 lg:flex-row lg:items-start">
-
                 <!-- Number -->
                 <div
                   class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-gray-300 text-sm font-semibold"
@@ -3976,6 +4138,83 @@ onMounted(async () => {
         </div>
 
         <div class="mt-5 grid grid-cols-1 gap-5 md:grid-cols-2">
+          <!-- Task Type -->
+          <fieldset class="fieldset md:col-span-2">
+            <legend class="fieldset-legend">
+              Task Type
+            </legend>
+
+            <div class="flex flex-wrap gap-3">
+              <label class="flex cursor-pointer items-center gap-2">
+                <input
+                  v-model="serviceTaskMode"
+                  type="radio"
+                  value="predefined"
+                  class="radio radio-primary"
+                  :disabled="!!editingTask"
+                />
+
+                <span>Predefined Task</span>
+              </label>
+
+              <label class="flex cursor-pointer items-center gap-2">
+                <input
+                  v-model="serviceTaskMode"
+                  type="radio"
+                  value="custom"
+                  class="radio radio-primary"
+                  :disabled="!!editingTask"
+                />
+
+                <span>Custom Task</span>
+              </label>
+            </div>
+          </fieldset>
+
+          <!-- Predefined Task -->
+          <fieldset
+            v-if="serviceTaskMode === 'predefined'"
+            class="fieldset md:col-span-2"
+          >
+            <legend class="fieldset-legend">
+              Select Predefined Task
+            </legend>
+
+            <div
+              v-if="serviceTasksLoading"
+              class="flex items-center gap-2 text-sm text-gray-content/60"
+            >
+              <span class="loading loading-spinner loading-sm" />
+              Loading predefined tasks...
+            </div>
+
+            <select
+              v-else
+              v-model="taskForm.service_task_id"
+              class="select select-bordered w-full"
+            >
+              <option value="">
+                Select a predefined task
+              </option>
+
+              <option
+                v-for="serviceTask in serviceTasks"
+                :key="serviceTask.id"
+                :value="String(serviceTask.id)"
+              >
+                {{ serviceTask.name }}
+              </option>
+            </select>
+
+            <p
+              v-if="selectedServiceTask"
+              class="mt-2 text-xs text-gray-content/60"
+            >
+              Suggested parts will be added automatically when this task is saved.
+            </p>
+          </fieldset>
+
+
           <!-- Department -->
           <fieldset class="fieldset">
             <legend class="fieldset-legend">
@@ -4189,23 +4428,24 @@ onMounted(async () => {
       </form>
     </dialog>
 
-    <!-- Add Part Modal -->
+    <!-- Request Parts Modal -->
     <dialog
       class="modal"
       :class="{
         'modal-open': partsModalOpen,
       }"
     >
-      <div class="modal-box max-w-2xl">
+      <div class="modal-box max-w-5xl">
 
+        <!-- Header -->
         <div class="flex items-start justify-between gap-4">
           <div>
             <h3 class="text-lg font-bold">
-              Add Part
+              Request Parts
             </h3>
 
             <p class="mt-1 text-sm text-gray-content/60">
-              Add a part to this job card.
+              Select multiple parts and submit them for store approval.
             </p>
           </div>
 
@@ -4237,141 +4477,303 @@ onMounted(async () => {
           </span>
         </div>
 
-        <div class="mt-5 grid grid-cols-1 gap-5 md:grid-cols-2">
-
-          <!-- Part -->
-          <fieldset class="fieldset md:col-span-2">
+        <!-- Search -->
+        <div class="mt-5">
+          <label class="fieldset">
             <legend class="fieldset-legend">
-              Part
+              Search Parts
             </legend>
 
-            <select
-              v-model="partForm.part_id"
-              class="select select-bordered w-full"
-            >
-              <option value="">
-                Select part
-              </option>
+            <div class="relative">
+              <Icon
+                name="i-lucide:search"
+                class="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-gray-500"
+              />
 
-              <option
-                v-for="part in availableParts"
-                :key="part.id"
-                :value="part.id"
+              <input
+                v-model="partSearch"
+                type="text"
+                class="input input-bordered w-full pl-9"
+                placeholder="Search part number, name or brand..."
+              />
+            </div>
+          </label>
+        </div>
+
+        <!-- Available Parts -->
+        <div class="mt-5">
+          <div class="mb-3 flex items-center justify-between">
+            <h4 class="font-semibold">
+              Available Parts
+            </h4>
+
+            <span class="text-xs text-gray-content/60">
+              {{ selectedPartRequests.length }} selected
+            </span>
+          </div>
+
+          <div
+            v-if="filteredAvailableParts.length === 0"
+            class="rounded-lg border border-base-300 p-6 text-center text-sm text-gray-content/60"
+          >
+            No parts found.
+          </div>
+
+          <div
+            v-else
+            class="max-h-64 overflow-y-auto rounded-lg border border-base-300"
+          >
+            <div
+              v-for="part in filteredAvailableParts"
+              :key="part.id"
+              class="flex items-center justify-between gap-3 border-b border-base-300 p-3 last:border-b-0"
+            >
+              <div class="min-w-0">
+                <p class="font-medium">
+                  {{ part.name }}
+                </p>
+
+                <p class="text-xs text-gray-content/60">
+                  {{ part.part_number }}
+
+                  <template v-if="part.brand">
+                    · {{ part.brand }}
+                  </template>
+                </p>
+
+                <p class="mt-1 text-xs text-gray-content/60">
+                  Stock: {{ part.current_stock }}
+                  {{ part.unit }}
+                  · Price: {{ formatCost(part.selling_price) }}
+                </p>
+              </div>
+
+              <button
+                type="button"
+                class="btn btn-sm"
+                :class="{
+                  'btn-success': isPartSelected(part.id),
+                  'btn-outline': !isPartSelected(part.id),
+                }"
+                :disabled="isPartSelected(part.id)"
+                @click="addPartToSelection(part)"
               >
-                {{ part.part_number }} —
-                {{ part.name }}
-                <template v-if="part.brand">
-                  ({{ part.brand }})
-                </template>
-              </option>
-            </select>
+                <Icon
+                  v-if="isPartSelected(part.id)"
+                  name="lucide:check"
+                  class="size-4"
+                />
 
-            <p
-              v-if="selectedPart"
-              class="mt-1 text-xs text-gray-content/50"
+                <Icon
+                  v-else
+                  name="lucide:plus"
+                  class="size-4"
+                />
+
+                <span>
+                  {{ isPartSelected(part.id) ? 'Selected' : 'Add' }}
+                </span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Selected Parts -->
+        <div class="mt-6">
+          <div class="mb-3 flex items-center justify-between">
+            <h4 class="font-semibold">
+              Selected Parts
+            </h4>
+
+            <span class="text-sm font-semibold text-primary">
+              {{ formatCost(selectedPartsTotal) }}
+            </span>
+          </div>
+
+          <div
+            v-if="selectedPartRequests.length === 0"
+            class="rounded-lg border border-dashed border-base-300 p-6 text-center text-sm text-gray-content/60"
+          >
+            Select parts from the list above.
+          </div>
+
+          <div
+            v-else
+            class="space-y-4"
+          >
+            <div
+              v-for="selected in selectedPartRequests"
+              :key="selected.part_id"
+              class="rounded-xl border border-base-300 p-4"
             >
-              Stock:
-              {{ selectedPart.current_stock }}
-              {{ selectedPart.unit }}
+              <!-- Selected Part Header -->
+              <div class="flex items-start justify-between gap-3">
+                <div>
+                  <h5 class="font-semibold">
+                    {{ getSelectedPartDetails(selected.part_id)?.name }}
+                  </h5>
+
+                  <p class="text-xs text-gray-content/60">
+                    {{ getSelectedPartDetails(selected.part_id)?.part_number }}
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  class="btn btn-ghost btn-sm btn-circle text-error"
+                  :disabled="partSaving"
+                  @click="removePartFromSelection(selected.part_id)"
+                >
+                  <Icon
+                    name="lucide:trash-2"
+                    class="size-4"
+                  />
+                </button>
+              </div>
+
+              <!-- Part Fields -->
+              <div class="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+
+                <!-- Task -->
+                <fieldset class="fieldset md:col-span-2">
+                  <legend class="fieldset-legend">
+                    Related Task / Service
+                  </legend>
+
+                  <select
+                    :value="selected.job_card_task_id"
+                    class="select select-bordered w-full"
+                    @change="updateSelectedPart(
+                      selected.part_id,
+                      'job_card_task_id',
+                      ($event.target as HTMLSelectElement).value
+                    )"
+                  >
+                    <option value="">
+                      Not linked to a specific task
+                    </option>
+
+                    <option
+                      v-for="task in tasks"
+                      :key="task.id"
+                      :value="task.id"
+                    >
+                      {{ task.title }}
+                    </option>
+                  </select>
+                </fieldset>
+
+                <!-- Quantity -->
+                <fieldset class="fieldset">
+                  <legend class="fieldset-legend">
+                    Quantity
+                  </legend>
+
+                  <input
+                    :value="selected.quantity"
+                    type="number"
+                    min="0.01"
+                    step="0.01"
+                    class="input input-bordered w-full"
+                    @input="updateSelectedPart(
+                      selected.part_id,
+                      'quantity',
+                      ($event.target as HTMLInputElement).value
+                    )"
+                  />
+                </fieldset>
+
+                <!-- Unit Price -->
+                <fieldset class="fieldset">
+                  <legend class="fieldset-legend">
+                    Unit Price
+                  </legend>
+
+                  <input
+                    :value="selected.unit_price"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    class="input input-bordered w-full"
+                    @input="updateSelectedPart(
+                      selected.part_id,
+                      'unit_price',
+                      ($event.target as HTMLInputElement).value
+                    )"
+                  />
+                </fieldset>
+
+                <!-- Discount -->
+                <fieldset class="fieldset">
+                  <legend class="fieldset-legend">
+                    Discount
+                  </legend>
+
+                  <input
+                    :value="selected.discount"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    class="input input-bordered w-full"
+                    @input="updateSelectedPart(
+                      selected.part_id,
+                      'discount',
+                      ($event.target as HTMLInputElement).value
+                    )"
+                  />
+                </fieldset>
+
+                <!-- Total -->
+                <div class="rounded-lg border border-primary/20 bg-primary/5 p-4">
+                  <p class="text-xs text-gray-content/50">
+                    Total
+                  </p>
+
+                  <p class="mt-1 text-xl font-bold text-primary">
+                    {{ formatCost(getSelectedPartTotal(selected)) }}
+                  </p>
+                </div>
+
+                <!-- Notes -->
+                <fieldset class="fieldset md:col-span-2">
+                  <legend class="fieldset-legend">
+                    Notes
+                  </legend>
+
+                  <textarea
+                    :value="selected.notes"
+                    class="textarea textarea-bordered min-h-20 w-full"
+                    placeholder="Optional notes..."
+                    @input="updateSelectedPart(
+                      selected.part_id,
+                      'notes',
+                      ($event.target as HTMLTextAreaElement).value
+                    )"
+                  ></textarea>
+                </fieldset>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Summary -->
+        <div
+          v-if="selectedPartRequests.length > 0"
+          class="mt-5 flex items-center justify-between rounded-lg bg-base-200 p-4"
+        >
+          <div>
+            <p class="text-sm font-medium">
+              Total Parts
             </p>
-          </fieldset>
 
-          <!-- Task -->
-          <fieldset class="fieldset md:col-span-2">
-            <legend class="fieldset-legend">
-              Related Task / Service
-            </legend>
-
-            <select
-              v-model="partForm.job_card_task_id"
-              class="select select-bordered w-full"
-            >
-              <option value="">
-                Not linked to a specific task
-              </option>
-
-              <option
-                v-for="task in tasks"
-                :key="task.id"
-                :value="task.id"
-              >
-                {{ task.title }}
-              </option>
-            </select>
-          </fieldset>
-
-          <!-- Quantity -->
-          <fieldset class="fieldset">
-            <legend class="fieldset-legend">
-              Quantity
-            </legend>
-
-            <input
-              v-model="partForm.quantity"
-              type="number"
-              min="0.01"
-              step="0.01"
-              class="input input-bordered w-full"
-              placeholder="e.g. 2"
-            />
-          </fieldset>
-
-          <!-- Unit Price -->
-          <fieldset class="fieldset">
-            <legend class="fieldset-legend">
-              Unit Price
-            </legend>
-
-            <input
-              v-model="partForm.unit_price"
-              type="number"
-              min="0"
-              step="0.01"
-              class="input input-bordered w-full"
-              placeholder="Selling price"
-            />
-          </fieldset>
-
-          <!-- Discount -->
-          <fieldset class="fieldset">
-            <legend class="fieldset-legend">
-              Discount
-            </legend>
-
-            <input
-              v-model="partForm.discount"
-              type="number"
-              min="0"
-              step="0.01"
-              class="input input-bordered w-full"
-              placeholder="0"
-            />
-          </fieldset>
-
-          <!-- Total -->
-          <div class="rounded-lg border border-primary/20 bg-primary/5 p-4">
-            <p class="text-xs text-gray-content/50">
-              Total
-            </p>
-
-            <p class="mt-1 text-xl font-bold text-primary">
-              {{ formatCost(partTotal) }}
+            <p class="text-xs text-gray-content/60">
+              {{ selectedPartRequests.length }} part request(s)
             </p>
           </div>
 
-          <!-- Notes -->
-          <fieldset class="fieldset md:col-span-2">
-            <legend class="fieldset-legend">
-              Notes
-            </legend>
-
-            <textarea
-              v-model="partForm.notes"
-              class="textarea textarea-bordered min-h-24 w-full"
-              placeholder="Optional notes..."
-            ></textarea>
-          </fieldset>
-
+          <p class="text-xl font-bold text-primary">
+            {{ formatCost(selectedPartsTotal) }}
+          </p>
         </div>
 
         <!-- Actions -->
@@ -4388,7 +4790,10 @@ onMounted(async () => {
           <button
             type="button"
             class="btn btn-primary"
-            :disabled="partSaving"
+            :disabled="
+              partSaving ||
+              selectedPartRequests.length === 0
+            "
             @click="savePart"
           >
             <span
@@ -4397,11 +4802,10 @@ onMounted(async () => {
             ></span>
 
             <span v-else>
-              Add Part
+              Submit Requests
             </span>
           </button>
         </div>
-
       </div>
 
       <form

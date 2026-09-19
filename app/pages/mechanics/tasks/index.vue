@@ -91,6 +91,8 @@ const fetchTasks = async () => {
   try {
     const response = await api('/api/admin/mechanic/tasks')
 
+    console.log(response)
+
     const data = response.data
 
     tasks.value = Array.isArray(data)
@@ -150,6 +152,7 @@ onMounted(fetchTasks)
         <p class="text-sm text-base-content/60">
           Tasks assigned to you
         </p>
+
       </div>
 
       <div class="flex items-center justify-center gap-10">

@@ -1,37 +1,24 @@
 <script setup>
-import heroImage from "@/assets/hero.png";
-import CarImage from "@/assets/home.svg";
+import landing from "@/assets/landing.webp";
 
 </script>
 
 <template>
-  <main class="grid lg:grid-cols-2 place-items-center pt-16 pb-8 md:pt-12 md:pb-24 md:px-20 px-5">
+  <main class="relative">
     <div class="">
-      <h1
-        class="md:text-5xl text-3xl lg:text-6xl xl:text-7xl font-bold lg:tracking-tight xl:tracking-tighter">
-        Empowering Your Drive, Every Shift
-      </h1>
-      <p class="text-lg mt-4 text-slate-600 max-w-xl hidden md:block">
-        Welcome to your central hub for managing schedules, tracking job cards, and accessing workshop resources. Stay connected with your team, streamline daily repairs, and keep our shop moving forward with precision and speed.
-      </p>
-      <div class="mt-6 grid grid-cols-2 gap-3">
-        <NuxtLink
-          to="/auth/login"
-          class="flex gap-1 items-center justify-center bg-zinc-900 text-white px-3 py-2 rounded-lg"
-          rel="noopener">
-          Login
-        </NuxtLink>
-        <a
-          href="https://forms.gle/6g7k1Z3v5x2y8J9F9"
-          class="flex gap-1 items-center justify-center border px-3 py-2 rounded-lg"
-          target="_blank">
-          Singup
-        </a>
-      </div>
+      <img :src="landing" alt="" class="w-full min-h-[calc(100vh-64px)] h-full object-cover md:object-left object-right">
     </div>
-
-    <div class="py-6 md:order-1 ">
-      <img :src="CarImage" alt="" class="w-full h-full">
+    <div class="absolute flex items-center justify-center left-0 right-0 bottom-20">
+      <NuxtLink 
+        to="/auth/login" 
+        class="box-border relative z-30 inline-flex items-center justify-center w-auto px-8 py-3 overflow-hidden font-bold text-white transition-all duration-300 bg-gray-600 rounded-md cursor-pointer group ring-offset-2 ring-1 ring-gray-300 ring-offset-gray-200 hover:ring-offset-gray-500 ease focus:outline-none">
+        <span class="absolute bottom-0 right-0 w-8 h-20 -mb-8 -mr-5 transition-all duration-300 ease-out transform rotate-45 translate-x-1 bg-white opacity-10 group-hover:translate-x-0"></span>
+        <span class="absolute top-0 left-0 w-20 h-8 -mt-1 -ml-12 transition-all duration-300 ease-out transform -rotate-45 -translate-x-1 bg-white opacity-10 group-hover:translate-x-0"></span>
+        <span class="relative z-20 flex items-center text-xl">
+            <svg class="relative w-8 h-8 mr-2 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+            Login Now
+        </span>
+      </NuxtLink>
     </div>
   </main>
 </template>

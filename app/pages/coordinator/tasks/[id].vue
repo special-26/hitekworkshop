@@ -97,6 +97,21 @@ interface CoordinatorTask {
   parts?: JobCardPart[]
 }
 
+const config = useRuntimeConfig()
+const getImageUrl = (path: string | null | undefined) => {
+  if (!path) {
+    return null
+  }
+
+  // Already a complete URL
+  if (path.startsWith('http://') || path.startsWith('https://')) {
+    return path
+  }
+
+  // Laravel storage image
+  return `${config.public.apiBaseUrl}/storage/${path}`
+}
+
 const route = useRoute()
 const router = useRouter()
 const api = useApi()
@@ -156,84 +171,52 @@ const partLoading = ref(false)
 const partSaving = ref(false)
 const partsError = ref('')
 
-const selectedBrand = ref('')
-const selectedCategory = ref('')
-const selectedPartId = ref<number | null>(null)
+const selectedVehicleBrandId = ref('')
+const vehicleModels = ref<any[]>([])
+const selectedVehicleModelId = ref('')
 
+const partCategories = ref<any[]>([])
+const selectedPartCategoryId = ref('')
 
-const availableBrands = computed(() => {
-  return [
-    ...new Set(
-      availableParts.value
-        .map((part: any) => part.brand)
-        .filter(Boolean)
-    ),
-  ].sort()
-})
+const selectedPartId = ref('')
+const selectedPart = ref<any | null>(null)
 
-const availableCategories = computed(() => {
-  const parts = selectedBrand.value
-    ? availableParts.value.filter(
-        (part: any) =>
-          part.brand === selectedBrand.value
-      )
-    : []
+const brandSectionOpen = ref(true)
+const modelSectionOpen = ref(false)
+const categorySectionOpen = ref(true)
 
-  return [
-    ...new Set(
-      parts
-        .map((part: any) => part.category)
-        .filter(Boolean)
-    ),
-  ].sort()
-})
-
-const filteredParts = computed(() => {
-  return availableParts.value.filter((part: any) => {
-    return (
-      (!selectedBrand.value ||
-        part.brand === selectedBrand.value) &&
-      (!selectedCategory.value ||
-        part.category === selectedCategory.value)
-    )
-  })
-})
+const modelLoading = ref(false)
 
 const fetchAvailableParts = async () => {
+  if (!selectedVehicleModelId.value) {
+    availableParts.value = []
+    return
+  }
+
   partLoading.value = true
   partsError.value = ''
 
   try {
-    const allParts: AvailablePart[] = []
-    let currentPage = 1
-    let lastPage = 1
+    const response = await api(
+      `/api/admin/vehicles/catalog/models/${selectedVehicleModelId.value}/available-parts`,
+      {
+        query: {
+          category_id:
+            selectedPartCategoryId.value || undefined,
 
-    do {
-      const response = await api(
-        `/api/admin/parts?page=${currentPage}`
-      )
+          search:
+            partSearch.value.trim() || undefined,
+        },
+      }
+    )
 
-      const result = response.data
+    const result = response.data
 
-      const pageParts = Array.isArray(result)
-        ? result
-        : Array.isArray(result?.data)
-          ? result.data
-          : []
-
-      allParts.push(...pageParts)
-
-      lastPage = Number(
-        result?.meta?.last_page ??
-        result?.last_page ??
-        result?.meta?.lastPage ??
-        currentPage
-      )
-
-      currentPage++
-    } while (currentPage <= lastPage)
-
-    availableParts.value = allParts
+    availableParts.value = Array.isArray(result)
+      ? result
+      : Array.isArray(result?.data)
+        ? result.data
+        : []
   } catch (err: any) {
     console.error('Unable to load available parts', err)
 
@@ -245,7 +228,7 @@ const fetchAvailableParts = async () => {
     partLoading.value = false
   }
 }
-
+// Fetch Vehicle Brand
 const fetchVehicleBrands = async () => {
   try {
     const response = await api(
@@ -268,29 +251,143 @@ const fetchVehicleBrands = async () => {
       'Unable to load vehicle brands.'
   }
 }
-
-
-
-const filteredAvailableParts = computed(() => {
-  const search = partSearch.value.trim().toLowerCase()
-
-  if (!search) {
-    return availableParts.value
+// Fetch Vehicle Model
+const fetchVehicleModels = async (
+  brandId: number | string
+) => {
+  if (!brandId) {
+    vehicleModels.value = []
+    return
   }
 
-  return availableParts.value.filter((part) => {
-    return [
-      part.part_number,
-      part.name,
-      part.brand,
-      part.category,
-    ]
-      .filter(Boolean)
-      .some((value) =>
-        String(value).toLowerCase().includes(search)
-      )
+  modelLoading.value = true
+  partsError.value = ''
+
+  try {
+    const response = await api(
+      `/api/admin/vehicles/catalog/brands/${brandId}/models`
+    )
+
+    const result = response.data
+
+    vehicleModels.value = Array.isArray(result)
+      ? result
+      : Array.isArray(result?.data)
+        ? result.data
+        : []
+  } catch (err: any) {
+    console.error('Unable to load vehicle models', err)
+
+    partsError.value =
+      err?.data?.message ||
+      err?.message ||
+      'Unable to load vehicle models.'
+  } finally {
+    modelLoading.value = false
+  }
+}
+// Fetch Part Categories
+const fetchPartCategories = async () => {
+  try {
+    const response = await api(
+      '/api/admin/vehicles/catalog/part-categories'
+    )
+
+    const result = response.data
+
+    partCategories.value = Array.isArray(result)
+      ? result
+      : Array.isArray(result?.data)
+        ? result.data
+        : []
+  } catch (err: any) {
+    console.error('Unable to load part categories', err)
+
+    partsError.value =
+      err?.data?.message ||
+      err?.message ||
+      'Unable to load part categories.'
+  }
+}
+const handlePartCategoryChange = async () => {
+  if (!selectedVehicleModelId.value) {
+    return
+  }
+
+  if (!selectedPartCategoryId.value) {
+    availableParts.value = []
+    return
+  }
+
+  await fetchAvailableParts()
+}
+
+// New
+const selectVehicleBrand = async (brand: any) => {
+  selectedVehicleBrandId.value = String(brand.id)
+
+  selectedVehicleModelId.value = ''
+  selectedPartCategoryId.value = ''
+
+  vehicleModels.value = []
+  availableParts.value = []
+  partSearch.value = ''
+
+  // Collapse brand and open model selection
+  brandSectionOpen.value = false
+  modelSectionOpen.value = true
+
+  await fetchVehicleModels(brand.id)
+}
+const selectVehicleModel = (model: any) => {
+  selectedVehicleModelId.value = String(model.id)
+
+  // Clear previous category and parts
+  selectedPartCategoryId.value = ''
+  availableParts.value = []
+  partSearch.value = ''
+
+  // Collapse model after selection
+  modelSectionOpen.value = false
+  categorySectionOpen.value = true
+}
+const selectPartCategory = async (category: any) => {
+  selectedPartCategoryId.value = String(category.id)
+
+  // Clear previous search and results
+  partSearch.value = ''
+  availableParts.value = []
+
+  // Collapse category section after selection
+  categorySectionOpen.value = false
+
+  // Fetch parts only after category selection
+  await fetchAvailableParts()
+}
+const selectPart = (part: any) => {
+  const existingPart = selectedPartRequests.value.find(
+    (item: any) =>
+      String(item.part_id) === String(part.id)
+  )
+
+  if (existingPart) {
+    return
+  }
+
+  selectedPartRequests.value.push({
+    part_id: part.id,
+    name: part.name,
+    part_number: part.part_number,
+    brand: part.brand,
+    image: part.image,
+    unit: part.unit,
+
+    quantity: 1,
+    unit_price: Number(part.selling_price || 0),
+    discount: 0,
+    notes: '',
   })
-})
+}
 
 const isPartSelected = (partId: number | string) => {
   return selectedPartRequests.value.some(
@@ -352,8 +449,21 @@ const getSelectedPartDetails = (
 }
 const resetPartForm = () => {
   selectedPartRequests.value = []
+
   partSearch.value = ''
+
+  selectedVehicleBrandId.value = ''
+  selectedVehicleModelId.value = ''
+  selectedPartCategoryId.value = ''
+
+  vehicleModels.value = []
+  availableParts.value = []
+
   partsError.value = ''
+
+  brandSectionOpen.value = true
+  modelSectionOpen.value = false
+  categorySectionOpen.value = true
 }
 
 const openPartsModal = async () => {
@@ -365,6 +475,10 @@ const openPartsModal = async () => {
 
   if (!vehicleBrands.value.length) {
     await fetchVehicleBrands()
+  }
+
+  if (!partCategories.value.length) {
+    await fetchPartCategories()
   }
 
   partsModalOpen.value = true
@@ -872,7 +986,6 @@ const goBack = () => {
 onMounted(async () => {
   await fetchTask()
   await fetchLookups()
-  await fetchAvailableParts()
 })
 </script>
 
@@ -895,12 +1008,15 @@ onMounted(async () => {
 
         <p
           v-if="task"
-          class="text-sm text-base-content/60"
+          class="text-sm text-gray-content/60"
         >
           {{ task.job_card?.job_card_number ?? '—' }}
         </p>
       </div>
     </div>
+
+    hh
+    <!-- <img src="/images/vehicle-brands/honda.webp" alt=""> -->
 
     <!-- Loading -->
     <div
@@ -931,13 +1047,13 @@ onMounted(async () => {
       <div class="mx-auto max-w-4xl space-y-4">
 
         <!-- Status -->
-        <div class="card border border-base-300 bg-base-200">
+        <div class="card border border-gray-300 bg-gray-200">
           <div class="card-body">
 
             <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
 
               <div>
-                <div class="text-xs text-base-content/50">
+                <div class="text-xs text-gray-content/50">
                   Current Status
                 </div>
 
@@ -979,7 +1095,7 @@ onMounted(async () => {
         <div class="grid gap-4 md:grid-cols-2">
 
           <!-- Vehicle -->
-          <div class="card border border-base-300 bg-base-200">
+          <div class="card border border-gray-300 bg-gray-200">
             <div class="card-body">
               <h2 class="card-title text-lg">
                 Vehicle
@@ -989,7 +1105,7 @@ onMounted(async () => {
                 {{ task.job_card?.vehicle?.registration_number ?? '—' }}
               </div>
 
-              <div class="text-base-content/70">
+              <div class="text-gray-content/70">
                 {{ task.job_card?.vehicle?.make ?? '—' }}
                 {{ task.job_card?.vehicle?.model ?? '—' }}
 
@@ -1000,7 +1116,7 @@ onMounted(async () => {
 
               <div class="mt-3 grid grid-cols-2 gap-3 text-sm">
                 <div>
-                  <div class="text-xs text-base-content/50">
+                  <div class="text-xs text-gray-content/50">
                     Fuel
                   </div>
 
@@ -1008,7 +1124,7 @@ onMounted(async () => {
                 </div>
 
                 <div>
-                  <div class="text-xs text-base-content/50">
+                  <div class="text-xs text-gray-content/50">
                     Odometer
                   </div>
 
@@ -1019,7 +1135,7 @@ onMounted(async () => {
           </div>
 
           <!-- Customer -->
-          <div class="card border border-base-300 bg-base-200">
+          <div class="card border border-gray-300 bg-gray-200">
             <div class="card-body">
               <h2 class="card-title text-lg">
                 Customer
@@ -1029,7 +1145,7 @@ onMounted(async () => {
                 {{ task.job_card?.customer?.name ?? '—' }}
               </div>
 
-              <div class="text-sm text-base-content/60">
+              <div class="text-sm text-gray-content/60">
                 {{ task.job_card?.customer?.phone ?? '—' }}
               </div>
             </div>
@@ -1038,12 +1154,12 @@ onMounted(async () => {
         </div>
 
         <!-- Task -->
-        <div class="card border border-base-300 bg-base-200">
+        <div class="card border border-gray-300 bg-gray-200">
           <div class="card-body">
 
             <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div>
-                <div class="text-xs text-base-content/50">
+                <div class="text-xs text-gray-content/50">
                   Service / Task
                 </div>
 
@@ -1073,7 +1189,7 @@ onMounted(async () => {
 
             <p
               v-if="task.description"
-              class="mt-3 text-sm text-base-content/70"
+              class="mt-3 text-sm text-gray-content/70"
             >
               {{ task.description }}
             </p>
@@ -1082,7 +1198,7 @@ onMounted(async () => {
         </div>
 
         <!-- Assignment -->
-        <div class="card border border-base-300 bg-base-200">
+        <div class="card border border-gray-300 bg-gray-200">
           <div class="card-body">
 
             <h2 class="card-title text-lg">
@@ -1092,7 +1208,7 @@ onMounted(async () => {
             <div class="grid gap-4 sm:grid-cols-3">
 
               <div>
-                <div class="text-xs text-base-content/50">
+                <div class="text-xs text-gray-content/50">
                   Department
                 </div>
 
@@ -1102,7 +1218,7 @@ onMounted(async () => {
               </div>
 
               <div>
-                <div class="text-xs text-base-content/50">
+                <div class="text-xs text-gray-content/50">
                   Bay
                 </div>
 
@@ -1112,7 +1228,7 @@ onMounted(async () => {
               </div>
 
               <div>
-                <div class="text-xs text-base-content/50">
+                <div class="text-xs text-gray-content/50">
                   Mechanic
                 </div>
 
@@ -1122,7 +1238,7 @@ onMounted(async () => {
 
                 <div
                   v-if="task.assigned_employee?.employee_code"
-                  class="text-xs text-base-content/50"
+                  class="text-xs text-gray-content/50"
                 >
                   {{ task.assigned_employee.employee_code }}
                 </div>
@@ -1134,7 +1250,7 @@ onMounted(async () => {
         </div>
 
         <!-- Timing -->
-        <div class="card border border-base-300 bg-base-200">
+        <div class="card border border-gray-300 bg-gray-200">
           <div class="card-body">
 
             <h2 class="card-title text-lg">
@@ -1144,7 +1260,7 @@ onMounted(async () => {
             <div class="grid gap-4 sm:grid-cols-3 text-sm">
 
               <div>
-                <div class="text-xs text-base-content/50">
+                <div class="text-xs text-gray-content/50">
                   Estimated
                 </div>
 
@@ -1156,7 +1272,7 @@ onMounted(async () => {
               </div>
 
               <div>
-                <div class="text-xs text-base-content/50">
+                <div class="text-xs text-gray-content/50">
                   Started
                 </div>
 
@@ -1166,7 +1282,7 @@ onMounted(async () => {
               </div>
 
               <div>
-                <div class="text-xs text-base-content/50">
+                <div class="text-xs text-gray-content/50">
                   Actual
                 </div>
 
@@ -1185,7 +1301,7 @@ onMounted(async () => {
         <!-- Parts -->
         <div
           v-if="task?.parts?.length"
-          class="card bg-base-200 shadow-sm"
+          class="card bg-gray-200 shadow-sm"
         >
           <div class="card-body">
             <h2 class="card-title text-base">
@@ -1195,14 +1311,14 @@ onMounted(async () => {
             <div
               v-for="jobCardPart in task.parts"
               :key="jobCardPart.id"
-              class="flex items-center justify-between gap-3 border-b border-base-300 py-3 last:border-0"
+              class="flex items-center justify-between gap-3 border-b border-gray-300 py-3 last:border-0"
             >
               <div class="min-w-0">
                 <p class="font-medium">
                   {{ jobCardPart.part.name }}
                 </p>
 
-                <p class="text-sm text-base-content/60">
+                <p class="text-sm text-gray-content/60">
                   {{ jobCardPart.part.part_number }}
                   · Qty: {{ jobCardPart.quantity }} {{ jobCardPart.part.unit }}
                 </p>
@@ -1237,7 +1353,7 @@ onMounted(async () => {
           Change Assignment
         </h3>
 
-        <p class="mt-1 text-sm text-base-content/60">
+        <p class="mt-1 text-sm text-gray-content/60">
           {{ task?.title }}
         </p>
 
@@ -1382,7 +1498,7 @@ onMounted(async () => {
           Confirm Status Change
         </h3>
 
-        <p class="py-4 text-sm text-base-content/70">
+        <p class="py-4 text-sm text-gray-content/70">
           Are you sure you want to change this task from
           <span class="font-semibold capitalize">
             {{ task?.status?.replace('_', ' ') }}
@@ -1393,8 +1509,8 @@ onMounted(async () => {
           </span>?
         </p>
 
-        <div class="rounded-lg bg-base-300 p-3">
-          <div class="text-xs text-base-content/50">
+        <div class="rounded-lg bg-gray-300 p-3">
+          <div class="text-xs text-gray-content/50">
             Task
           </div>
 
@@ -1445,91 +1561,680 @@ onMounted(async () => {
       class="modal"
       :class="{ 'modal-open': partsModalOpen }"
     >
-      <div class="modal-box max-w-4xl">
-        <h3 class="text-lg font-bold">
-          Request Parts
-        </h3>
+      <div class="flex flex-col modal-box max-w-7xl h-[95vh] p-0 overflow-hidden">
 
-        <p class="mt-1 text-sm text-base-content/60">
-          {{ task?.title }}
-        </p>
+        <!-- Fixed Header -->
+        <div class="flex flex-none items-center justify-between border-b border-gray-300 px-6 py-3 bg-zinc-800">
+          <div class="text-white">
+            <h2 class="text-xl font-bold">
+              Request Parts
+            </h2>
 
-        <!-- Error -->
-        <div
-          v-if="partsError"
-          class="alert alert-error mt-4"
-        >
-          <span>{{ partsError }}</span>
+            <p class="text-sm text-gray-300">
+              Select vehicle, category and parts to request.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            class="btn btn-circle btn-ghost btn-sm text-white hover:text-black"
+            @click="partsModalOpen = false"
+          >
+            <Icon name="i-lucide-x" class="h-5 w-5" />
+          </button>
         </div>
 
-        <!-- Search -->
-        <div class="mt-5">
-          <label class="label">
-            <span class="label-text">
-              Search Parts
-            </span>
-          </label>
+        <!-- Scrollable Body -->
+        <section class="min-h-0 flex-1 overflow-y-auto px-5 py-4 body-section">
+          <p class="mt-1 text-gray-800">
+            <span class="font-bold">Task: </span>
+            {{ task?.title }}
+          </p>
 
-          <input
-            v-model="partSearch"
-            type="text"
-            placeholder="Search by part number, name, brand..."
-            class="input input-bordered w-full"
-          />
-        </div>
-
-        <select
-          v-model="selectedBrand"
-          class="select select-bordered w-full"
-          @change="selectedCategory = ''; selectedPartId = null"
-        >
-          <option value="">Select Brand</option>
-
-          <option
-            v-for="brand in availableBrands"
-            :key="brand"
-            :value="brand"
+          <!-- Error -->
+          <div
+            v-if="partsError"
+            class="alert alert-error mt-4"
           >
-            {{ brand }}
-          </option>
-        </select>
-        <select
-          v-model="selectedCategory"
-          class="select select-bordered w-full"
-          :disabled="!selectedBrand"
-          @change="selectedPartId = null"
-        >
-          <option value="">Select Category</option>
+            <span>{{ partsError }}</span>
+          </div>
 
-          <option
-            v-for="category in availableCategories"
-            :key="category"
-            :value="category"
-          >
-            {{ category }}
-          </option>
-        </select>
-        <select
-          v-model="selectedPartId"
-          class="select select-bordered w-full"
-          :disabled="!selectedCategory"
-        >
-          <option :value="null">Select Part</option>
+          <!-- Result Section -->
+          <div class="mt-5">
 
-          <option
-            v-for="part in filteredParts.filter(
-              (part) => part.category === selectedCategory
-            )"
-            :key="part.id"
-            :value="part.id"
-          >
-            {{ part.name }} ({{ part.part_number }})
-            — ₹{{ part.selling_price }}
-          </option>
-        </select>
+            <!-- Select Vehicle Brands -->
+            <div class="mb-4 rounded-xl border border-gray-300 bg-gray-200/30">
+              <button
+                type="button"
+                class="flex w-full items-center justify-between px-4 py-3 text-left"
+                @click="brandSectionOpen = !brandSectionOpen"
+              >
+                <div>
+                  <p class="text-xs text-gray-content/60">
+                    1. Vehicle Brand
+                  </p>
 
-        <!-- Modal Actions -->
-        <div class="modal-action">
+                  <p class="font-semibold">
+                    {{
+                      vehicleBrands.find(
+                        (brand) =>
+                          String(brand.id) === String(selectedVehicleBrandId)
+                      )?.name || 'Select Brand'
+                    }}
+                  </p>
+                </div>
+
+                <Icon
+                  :name="
+                    categorySectionOpen
+                      ? 'mdi:chevron-up'
+                      : 'mdi:chevron-down'
+                  "
+                  size="sm"
+                />
+              </button>
+
+              <div
+                v-if="brandSectionOpen"
+                class="border-t border-gray-300 p-4"
+              >
+                <div class="space-y-3">
+                  <div class="flex items-center justify-between">
+                    <h3 class="font-semibold">
+                      Select Vehicle Brand
+                    </h3>
+
+                    <span class="text-sm text-gray-content/60">
+                      {{ vehicleBrands.length }} brands
+                    </span>
+                  </div>
+
+                  <div
+                    v-if="!vehicleBrands.length"
+                    class="text-sm text-gray-content/60"
+                  >
+                    No vehicle brands available.
+                  </div>
+
+                  <div
+                    v-else
+                    class="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-5"
+                  >
+                    <button
+                      v-for="brand in vehicleBrands"
+                      :key="brand.id"
+                      type="button"
+                      class="card border transition-all"
+                      :class="
+                        String(selectedVehicleBrandId) === String(brand.id)
+                          ? 'border-primary bg-primary/10 ring-2 ring-primary'
+                          : 'border-gray-300 bg-gray-100 hover:border-primary'
+                      "
+                      @click="selectVehicleBrand(brand)"
+                    >
+                      <div class="card-body items-center gap-2 p-3 text-center">
+                        <div
+                          class="flex h-16 w-16 items-center justify-center overflow-hidden rounded-xl bg-gray-200"
+                        >
+                          <img
+                            v-if="brand.logo"
+                            :src="getImageUrl(brand.logo)"
+                            :alt="brand.name"
+                            class="h-full w-full object-contain"
+                          />
+
+                          <span
+                            v-else
+                            class="text-xl font-bold text-gray-content/50"
+                          >
+                            {{ brand.name?.charAt(0) }}
+                          </span>
+                        </div>
+
+                        <span class="text-sm font-medium">
+                          {{ brand.name }}
+                        </span>
+
+                        <span
+                          v-if="brand.models_count !== undefined"
+                          class="text-xs text-gray-content/60"
+                        >
+                          {{ brand.models_count }} models
+                        </span>
+                      </div>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Select Vehicle Models -->
+            <div
+              v-if="selectedVehicleBrandId"
+              class="mb-4 rounded-xl border border-gray-300 bg-gray-200/30"
+            >
+              <button
+                type="button"
+                class="flex w-full items-center justify-between px-4 py-3 text-left"
+                @click="modelSectionOpen = !modelSectionOpen"
+              >
+                <div>
+                  <p class="text-xs text-gray-content/60">
+                    2. Vehicle Model
+                  </p>
+
+                  <p class="font-semibold">
+                    {{
+                      vehicleModels.find(
+                        (model) =>
+                          String(model.id) === String(selectedVehicleModelId)
+                      )?.name || 'Select Model'
+                    }}
+                  </p>
+                </div>
+
+                <Icon
+                  :name="
+                    categorySectionOpen
+                      ? 'mdi:chevron-up'
+                      : 'mdi:chevron-down'
+                  "
+                  size="sm"
+                />
+              </button>
+
+              <div
+                v-if="modelSectionOpen"
+                class="border-t border-gray-300 p-4"
+              >
+                <!-- Content -->
+                <div
+                  v-if="selectedVehicleBrandId"
+                  class="mt-5 space-y-3"
+                >
+                  <div class="flex items-center justify-between">
+                    <h3 class="font-semibold">
+                      Select Vehicle Model
+                    </h3>
+
+                    <span class="text-sm text-gray-content/60">
+                      {{ vehicleModels.length }} models
+                    </span>
+                  </div>
+
+                  <!-- Loading -->
+                  <div
+                    v-if="modelLoading"
+                    class="flex items-center justify-center py-6"
+                  >
+                    <span class="loading loading-spinner loading-md"></span>
+                  </div>
+
+                  <!-- Models -->
+                  <div
+                    v-else-if="vehicleModels.length"
+                    class="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-5"
+                  >
+                    <button
+                      v-for="model in vehicleModels"
+                      :key="model.id"
+                      type="button"
+                      class="card border transition-all"
+                      :class="
+                        String(selectedVehicleModelId) === String(model.id)
+                          ? 'border-primary bg-primary/10 ring-2 ring-primary'
+                          : 'border-gray-300 bg-gray-100 hover:border-primary'
+                      "
+                      @click="selectVehicleModel(model)"
+                    >
+                      <div class="card-body items-center gap-2 p-3 text-center">
+                        <div
+                          class="flex h-24 w-full items-center justify-center overflow-hidden rounded-lg bg-gray-200"
+                        >
+                          <img
+                            v-if="model.image"
+                            :src="getImageUrl(model.image)"
+                            :alt="model.name"
+                            class="h-full w-full object-contain"
+                          />
+
+                          <span
+                            v-else
+                            class="text-2xl font-bold text-gray-content/40"
+                          >
+                            {{ model.name?.charAt(0) }}
+                          </span>
+                        </div>
+
+                        <span class="text-sm font-medium">
+                          {{ model.name }}
+                        </span>
+                      </div>
+                    </button>
+                  </div>
+
+                  <!-- Empty -->
+                  <div
+                    v-else
+                    class="py-6 text-center text-sm text-gray-content/60"
+                  >
+                    No vehicle models found.
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Select Part Categories -->
+            <div
+              v-if="selectedVehicleModelId"
+              class="mt-4 rounded-xl border border-gray-300 bg-gray-200/30"
+            >
+              <!-- Category Header -->
+              <button
+                type="button"
+                class="flex w-full items-center justify-between px-4 py-3 text-left"
+                @click="categorySectionOpen = !categorySectionOpen"
+              >
+                <div>
+                  <p class="text-xs text-gray-content/60">
+                    3. Part Category
+                  </p>
+
+                  <p class="font-semibold">
+                    {{
+                      partCategories.find(
+                        (category) =>
+                          String(category.id) ===
+                          String(selectedPartCategoryId)
+                      )?.name || 'Select Category'
+                    }}
+                  </p>
+                </div>
+
+                <Icon
+                  :name="
+                    categorySectionOpen
+                      ? 'mdi:chevron-up'
+                      : 'mdi:chevron-down'
+                  "
+                  size="sm"
+                />
+              </button>
+
+              <!-- Category Cards -->
+              <div
+                v-if="categorySectionOpen"
+                class="border-t border-gray-300 p-4"
+              >
+                <div class="mb-3 flex items-center justify-between">
+                  <h3 class="font-semibold">
+                    Select Part Category
+                  </h3>
+
+                  <span class="text-sm text-gray-content/60">
+                    {{ partCategories.length }} categories
+                  </span>
+                </div>
+
+                <div
+                  v-if="!partCategories.length"
+                  class="py-6 text-center text-sm text-gray-content/60"
+                >
+                  No part categories available.
+                </div>
+
+                <div
+                  v-else
+                  class="grid grid-cols-2 gap-3 sm:grid-cols-4 md:grid-cols-5"
+                >
+                  <button
+                    v-for="category in partCategories"
+                    :key="category.id"
+                    type="button"
+                    class="card border transition-all"
+                    :class="
+                      String(selectedPartCategoryId) ===
+                      String(category.id)
+                        ? 'border-primary bg-primary/10 ring-2 ring-primary'
+                        : 'border-gray-300 bg-gray-100 hover:border-primary'
+                    "
+                    @click="selectPartCategory(category)"
+                  >
+                    <div
+                      class="items-center gap-2 text-center"
+                    >
+                      <div
+                        class="flex h-full w-full items-center justify-center overflow-hidden rounded-lg bg-gray-200"
+                      >
+                        <img
+                          v-if="category.image"
+                          :src="getImageUrl(category.image)"
+                          :alt="category.name"
+                          class="h-full w-full object-cover"
+                        />
+
+                        <span
+                          v-else
+                          class="text-2xl font-bold text-gray-content/40"
+                        >
+                          {{ category.name?.charAt(0) }}
+                        </span>
+                      </div>
+
+                      <!-- <span class="text-sm font-medium">
+                        {{ category.name }}
+                      </span> -->
+                    </div>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Available Parts -->
+            <div
+              v-if="selectedPartCategoryId"
+              class="mt-5 space-y-4"
+            >
+              <!-- Header & Search -->
+              <div
+                class="flex flex-col justify-between gap-3 sm:flex-row sm:items-center"
+              >
+                <div>
+                  <h3 class="font-semibold">
+                    Select Parts
+                  </h3>
+
+                  <p class="text-sm text-gray-content/60">
+                    Choose the required parts from the list below.
+                  </p>
+                </div>
+
+                <span class="text-sm text-gray-content/60">
+                  {{ availableParts.length }} parts found
+                </span>
+              </div>
+
+              <input
+                v-model="partSearch"
+                type="text"
+                placeholder="Search part name or part number..."
+                class="input input-bordered w-full"
+                @input="fetchAvailableParts"
+              />
+
+              <!-- Loading -->
+              <div
+                v-if="partLoading"
+                class="flex justify-center py-8"
+              >
+                <span class="loading loading-spinner loading-md"></span>
+              </div>
+
+              <!-- Error -->
+              <div
+                v-else-if="partsError"
+                class="alert alert-error text-sm"
+              >
+                {{ partsError }}
+              </div>
+
+              <!-- Empty -->
+              <div
+                v-else-if="!availableParts.length"
+                class="rounded-xl bg-gray-200 py-10 text-center text-sm text-gray-content/60"
+              >
+                No parts found for this category.
+              </div>
+
+              <!-- Parts Grid -->
+              <div
+                v-else
+                class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5"
+              >
+                <div
+                  v-for="part in availableParts"
+                  :key="part.id"
+                  class="card overflow-hidden border border-gray-300 bg-gray-100 transition-all hover:border-primary hover:shadow-md"
+                  :class="
+                    selectedPartRequests.some(
+                      (item: any) =>
+                        String(item.part_id) === String(part.id)
+                    )
+                      ? 'border-primary ring-2 ring-primary/30'
+                      : ''
+                  "
+                >
+                  <!-- Image -->
+                  <figure class="h-40 bg-gray-200 p-3">
+                    <img
+                      v-if="part.image"
+                      :src="part.image"
+                      :alt="part.name"
+                      class="h-full w-full object-contain"
+                    />
+
+                    <div
+                      v-else
+                      class="flex h-full w-full items-center justify-center"
+                    >
+                      <span class="text-5xl font-bold text-gray-content/20">
+                        {{ part.name?.charAt(0)?.toUpperCase() }}
+                      </span>
+                    </div>
+                  </figure>
+
+                  <!-- Details -->
+                  <div class="card-body gap-2 p-4">
+                    <h4 class="line-clamp-2 font-semibold">
+                      {{ part.name }}
+                    </h4>
+
+                    <p class="text-xs text-gray-content/60">
+                      {{ part.part_number || 'No part number' }}
+                    </p>
+
+                    <p class="text-xs text-gray-content/60">
+                      Brand: {{ part.brand || 'Generic' }}
+                    </p>
+
+                    <div class="flex items-center justify-between gap-2">
+                      <span class="font-bold text-primary">
+                        ₹{{ Number(part.selling_price || 0).toLocaleString('en-IN') }}
+                      </span>
+
+                      <span
+                        class="text-xs"
+                        :class="
+                          Number(part.current_stock) > 0
+                            ? 'text-success'
+                            : 'text-error'
+                        "
+                      >
+                        {{ Number(part.current_stock) }} in stock
+                      </span>
+                    </div>
+
+                    <!-- Action -->
+                    <button
+                      type="button"
+                      class="btn btn-primary btn-sm mt-2 w-full"
+                      :disabled="
+                        selectedPartRequests.some(
+                          (item: any) =>
+                            String(item.part_id) === String(part.id)
+                        )
+                      "
+                      @click="selectPart(part)"
+                    >
+                      {{
+                        selectedPartRequests.some(
+                          (item: any) =>
+                            String(item.part_id) === String(part.id)
+                        )
+                          ? 'Added'
+                          : 'Add Part'
+                      }}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Selected Parts Summary -->
+            <div
+              v-if="selectedPartRequests.length"
+              class="mt-5 rounded-xl border border-gray-300 bg-gray-200 p-3"
+            >
+              <!-- Header -->
+              <div class="mb-3 flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                  <div class="rounded-lg bg-primary/10 p-2">
+                    <icon
+                      name="clipboard-check"
+                      size="sm"
+                      class="text-primary"
+                    />
+                  </div>
+
+                  <div>
+                    <h3 class="text-sm font-bold">
+                      Selected Parts
+                    </h3>
+
+                    <p class="text-xs text--gray-800/60">
+                      {{ selectedPartRequests.length }} items selected
+                    </p>
+                  </div>
+                </div>
+
+                <span class="badge badge-primary badge-sm">
+                  Request Summary
+                </span>
+              </div>
+
+              <!-- Compact List -->
+              <div class="space-y-2">
+                <div
+                  v-for="(part, index) in selectedPartRequests"
+                  :key="part.part_id"
+                  class="flex items-center gap-3 rounded-lg border border-gray-300 bg-gray-100 p-2"
+                >
+                  <!-- Thumbnail -->
+                  <div
+                    class="flex h-14 w-14 flex-none items-center justify-center overflow-hidden rounded-lg bg-gray-200"
+                  >
+                    <img
+                      v-if="part.image"
+                      :src="part.image"
+                      :alt="part.name"
+                      class="h-full w-full object-contain"
+                    />
+
+                    <span
+                      v-else
+                      class="text-xl font-bold text--gray-800/30"
+                    >
+                      {{ part.name?.charAt(0)?.toUpperCase() }}
+                    </span>
+                  </div>
+
+                  <!-- Part Details -->
+                  <div class="min-w-0 flex-1">
+                    <p class="truncate text-sm font-semibold">
+                      {{ part.name }}
+                    </p>
+
+                    <p class="truncate text-xs text--gray-800/60">
+                      {{ part.part_number || 'No part number' }}
+                    </p>
+
+                    <p class="text-xs text--gray-800/60">
+                      ₹{{ Number(part.unit_price).toLocaleString('en-IN') }}
+                      / {{ part.unit || 'pcs' }}
+                    </p>
+                  </div>
+
+                  <!-- Quantity -->
+                  <div class="flex flex-none items-center gap-1">
+                    <button
+                      type="button"
+                      class="btn btn-square btn-ghost btn-xs"
+                      :disabled="Number(part.quantity) <= 1"
+                      @click="part.quantity = Math.max(1, Number(part.quantity) - 1)"
+                    >
+                      −
+                    </button>
+
+                    <input
+                      v-model.number="part.quantity"
+                      type="number"
+                      min="1"
+                      class="input input-bordered input-xs w-12 text-center"
+                    />
+
+                    <button
+                      type="button"
+                      class="btn btn-square btn-ghost btn-xs"
+                      @click="part.quantity = Number(part.quantity) + 1"
+                    >
+                      +
+                    </button>
+                  </div>
+
+                  <!-- Item Total -->
+                  <div class="hidden w-24 flex-none text-right sm:block">
+                    <p class="text-sm font-bold">
+                      ₹{{
+                        (
+                          Number(part.unit_price || 0) *
+                          Number(part.quantity || 0)
+                        ).toLocaleString('en-IN')
+                      }}
+                    </p>
+                  </div>
+
+                  <!-- Remove -->
+                  <button
+                    type="button"
+                    class="btn btn-square btn-ghost btn-sm text-error"
+                    @click="selectedPartRequests.splice(index, 1)"
+                  >
+                    <icon name="trash-2" size="sm"/>
+                  </button>
+                </div>
+              </div>
+
+              <!-- Summary Footer -->
+              <div
+                class="mt-3 flex items-center justify-between border-t border-primary/20 pt-3"
+              >
+                <span class="text-xs text--gray-800/60">
+                  Estimated parts total
+                </span>
+
+                <span class="font-bold text-primary">
+                  ₹{{
+                    selectedPartRequests
+                      .reduce(
+                        (total: number, part: any) =>
+                          total +
+                          Number(part.unit_price || 0) *
+                          Number(part.quantity || 0) -
+                          Number(part.discount || 0),
+                        0
+                      )
+                      .toLocaleString('en-IN')
+                  }}
+                </span>
+              </div>
+            </div>
+
+          </div>
+
+        </section>
+
+        <!-- Fixed Footer -->
+        <div class="flex flex-none flex-wrap items-center justify-end gap-3 border-t border-gray-300 bg-gray-100 px-5 py-4 ">
           <button
             type="button"
             class="btn btn-ghost"
@@ -1542,15 +2247,18 @@ onMounted(async () => {
           <button
             type="button"
             class="btn btn-primary"
-            :disabled="
-              partSaving ||
-              !selectedPartRequests.length
-            "
+            :disabled="partSaving || !selectedPartRequests.length"
             @click="savePart"
           >
-            Submit Requests
+            <span
+              v-if="partSaving"
+              class="loading loading-spinner loading-sm"
+            ></span>
+
+            Request Parts
           </button>
         </div>
+
       </div>
 
       <div

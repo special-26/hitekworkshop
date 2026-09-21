@@ -1,7 +1,9 @@
 <template>
 <div class="navbar bg-base-100 shadow-lg">
   <div class="flex-1">
-    <NuxtLink to="/" class="btn btn-ghost text-xl">Hitek Workshop</NuxtLink>
+    <NuxtLink to="/" class="">
+      <img :src="logo" alt="" class="w-60 h-full object-contain">
+    </NuxtLink>
   </div>
   <div class="flex-none">
     <ul class="menu menu-horizontal px-1">
@@ -10,8 +12,8 @@
       </template>
       <template v-else>
         <li>
-          <NuxtLink to="/" class="nav-action-btn">
-            <slot>Dashboard</slot>
+          <NuxtLink to="/auth/dashboard" class="nav-action-btn">
+            Dashboard
           </NuxtLink>
         </li>
         <li>
@@ -28,12 +30,8 @@
 <script setup>
 const { isLoggedIn, user, logout } = useSanctum()
 
-defineProps({
-  actionLink: {
-    type: String,
-    required: true
-  }
-})
+import logo from "@/assets/logo.jpg";
+
 
 const handleLogout = async () => {
   await logout();

@@ -545,6 +545,9 @@ const invoiceLoading = ref(false)
 const invoiceSaving = ref(false)
 const invoiceError = ref('')
 
+const invoiceApproving = ref(false)
+const paymentLinkSharing = ref(false)
+
 const invoiceItems = ref<JobCardInvoiceItem[]>([])
 
 const invoiceForm = reactive({
@@ -664,7 +667,10 @@ const addInvoiceItem = () => {
   newInvoiceItem.description = ''
   newInvoiceItem.quantity = '1'
   newInvoiceItem.unit_price = ''
-  newInvoiceItem.discount = '0'
+  newInvoiceItem.discount = '0'  
+}
+const removeInvoiceItem = (index: number) => {
+  invoiceItems.value.splice(index, 1)
 }
 
 const saveInvoice = async () => {
@@ -743,6 +749,140 @@ const saveInvoice = async () => {
     invoiceSaving.value = false
   }
 }
+
+// Approve Final Bill
+const approveInvoice = async () => {
+  if (!jobCard.value?.id) {
+    return
+  }
+
+  if (!invoice.value) {
+    alert('Please generate and save the final bill first.')
+    return
+  }
+
+  const confirmed = confirm(
+    'Are you sure you want to approve this final bill?'
+  )
+
+  if (!confirmed) {
+    return
+  }
+
+  invoiceApproving.value = true
+  invoiceError.value = ''
+
+  try {
+    const response = await api(
+      `/api/admin/job-cards/${jobCard.value.id}/invoice/approve`,
+      {
+        method: 'POST',
+      }
+    )
+
+    console.log(
+      'FINAL BILL APPROVED:',
+      response
+    )
+
+    invoice.value = response.invoice
+
+    alert(
+      response.message ||
+      'Final bill approved successfully.'
+    )
+
+  } catch (err: any) {
+    console.error(
+      'APPROVE FINAL BILL ERROR:',
+      err
+    )
+
+    invoiceError.value =
+      err?.data?.message ||
+      err?.response?._data?.message ||
+      err?.message ||
+      'Unable to approve final bill.'
+
+    alert(invoiceError.value)
+
+  } finally {
+    invoiceApproving.value = false
+  }
+}
+// Share Payment Link on WhatsApp
+const sharePaymentLink = async () => {
+  if (!jobCard.value?.id) {
+    return
+  }
+
+  if (!invoice.value) {
+    alert('Final bill is not available.')
+    return
+  }
+
+  if (invoice.value.approval_status !== 'approved') {
+    alert(
+      'Please approve the final bill before sharing the payment link.'
+    )
+
+    return
+  }
+
+  paymentLinkSharing.value = true
+  invoiceError.value = ''
+
+  try {
+    const response = await api(
+      `/api/admin/job-cards/${jobCard.value.id}/payment-link/whatsapp`,
+      {
+        method: 'POST',
+      }
+    )
+
+    console.log(
+      'PAYMENT LINK WHATSAPP RESPONSE:',
+      response
+    )
+
+    const url = response?.url
+
+    if (!url) {
+      console.error(
+        'Payment link WhatsApp URL missing:',
+        response
+      )
+
+      alert(
+        'WhatsApp URL was not returned by the server.'
+      )
+
+      return
+    }
+
+    window.open(url, '_blank')
+
+  } catch (err: any) {
+    console.error(
+      'SHARE PAYMENT LINK ERROR:',
+      err
+    )
+
+    const errorMessage =
+      err?.data?.message ||
+      err?.response?._data?.message ||
+      err?.message ||
+      'Unable to share payment link.'
+
+    invoiceError.value = errorMessage
+
+    alert(errorMessage)
+
+  } finally {
+    paymentLinkSharing.value = false
+  }
+}
+
 const invoiceGenerating = ref(false)
 const generateInvoice = async () => {
   if (!jobCard.value) {
@@ -3109,7 +3249,7 @@ onMounted(async () => {
                   <!-- Description -->
                   <div class="md:col-span-4">
                     <label class="label">
-                      <span class="label-text text-xs">Description</span>
+                      <span class="label-text text-xs">Title</span>
                     </label>
 
                     <input
@@ -3204,21 +3344,22 @@ onMounted(async () => {
                   <table class="table">
                     <thead>
                       <tr>
-                        <th>Type</th>
-                        <th>Description</th>
+                        <!-- <th>Type</th> -->
+                        <th>Title</th>
                         <th class="w-24">Qty</th>
                         <th class="w-32">Unit Price</th>
                         <th class="w-32">Discount</th>
                         <th class="text-right">Total</th>
+                        <th class="text-center">Action</th>
                       </tr>
                     </thead>
 
                     <tbody>
                       <tr
-                        v-for="item in invoiceItems"
+                        v-for="(item, index) in invoiceItems"
                         :key="item.id"
                       >
-                        <td>
+                        <!-- <td>
                           <select
                             v-model="item.item_type"
                             class="select select-bordered select-sm w-full"
@@ -3231,7 +3372,7 @@ onMounted(async () => {
                               Part
                             </option>
                           </select>
-                        </td>
+                        </td> -->
 
                         <td>
                           <input
@@ -3271,8 +3412,18 @@ onMounted(async () => {
                           />
                         </td>
 
-                        <td class="text-right font-semibold">
+                        <td class="text-right font-semibold text-xs">
                           ₹{{ invoiceItemTotal(item).toFixed(2) }}
+                        </td>
+
+                        <td class="text-center">
+                          <button
+                            type="button"
+                            class="btn btn-xs"
+                            @click="removeInvoiceItem(index)"
+                          >
+                            <Icon name="material-symbols:delete-forever-outline" class="w-5 h-5 text-red-700" />
+                          </button>
                         </td>
                       </tr>
                     </tbody>
@@ -3285,7 +3436,7 @@ onMounted(async () => {
                   class="space-y-3 md:hidden"
                 >
                   <div
-                    v-for="item in invoiceItems"
+                    v-for="(item, index) in invoiceItems"
                     :key="item.id"
                     class="rounded-lg border border-gray-300 bg-gray-100 p-4"
                   >
@@ -3374,6 +3525,13 @@ onMounted(async () => {
                             ₹{{ invoiceItemTotal(item).toFixed(2) }}
                           </div>
                         </div>
+                        <button
+                          type="button"
+                          class="btn btn-xs"
+                          @click="removeInvoiceItem(index)"
+                        >
+                          <Icon name="material-symbols:delete-forever-outline" class="w-5 h-5 text-red-700" />
+                        </button>
                       </div>
 
                     </div>
@@ -3496,8 +3654,10 @@ onMounted(async () => {
                 </div>
               </div>
 
-              <!-- Save -->
-              <div class="mt-5 flex justify-end gap-3">
+              <!-- Final Bill Actions -->
+              <div class="mt-5 flex flex-col justify-end gap-3 sm:flex-row">
+
+                <!-- Save Final Bill -->
                 <button
                   type="button"
                   class="btn btn-primary btn-sm"
@@ -3519,6 +3679,7 @@ onMounted(async () => {
                   }}
                 </button>
 
+                <!-- Share Final Bill -->
                 <button
                   type="button"
                   class="btn bg-green-600 btn-sm text-white"
@@ -3528,9 +3689,83 @@ onMounted(async () => {
                   "
                   @click="openWhatsApp('final')"
                 >
-                  <Icon name="ic:baseline-whatsapp" size="20"/>
+                  <Icon
+                    name="ic:baseline-whatsapp"
+                    size="20"
+                  />
+
                   Share Final Bill
                 </button>
+
+                <!-- Approve Final Bill -->
+                <button
+                  v-if="
+                    invoice &&
+                    invoice.approval_status !== 'approved'
+                  "
+                  type="button"
+                  class="btn btn-warning btn-sm"
+                  :disabled="invoiceApproving"
+                  @click="approveInvoice"
+                >
+                  <span
+                    v-if="invoiceApproving"
+                    class="loading loading-spinner loading-xs"
+                  ></span>
+
+                  {{
+                    invoiceApproving
+                      ? 'Approving...'
+                      : 'Approve Final Bill'
+                  }}
+                </button>
+
+                <!-- Approved Status -->
+                <div
+                  v-else-if="
+                    invoice &&
+                    invoice.approval_status === 'approved'
+                  "
+                  class="badge badge-success gap-2 p-4"
+                >
+                  <Icon
+                    name="i-lucide-check-circle"
+                    size="16"
+                  />
+
+                  Bill Approved
+                </div>
+
+                <!-- Share Payment Link -->
+                <button
+                  v-if="
+                    invoice &&
+                    invoice.approval_status === 'approved' &&
+                    invoice.razorpay_payment_status !== 'paid'
+                  "
+                  type="button"
+                  class="btn btn-info btn-sm"
+                  :disabled="paymentLinkSharing"
+                  @click="sharePaymentLink"
+                >
+                  <span
+                    v-if="paymentLinkSharing"
+                    class="loading loading-spinner loading-xs"
+                  ></span>
+
+                  <Icon
+                    v-else
+                    name="ic:baseline-whatsapp"
+                    size="20"
+                  />
+
+                  {{
+                    paymentLinkSharing
+                      ? 'Preparing...'
+                      : 'Share Payment Link'
+                  }}
+                </button>
+
               </div>
 
             </template>
@@ -4428,395 +4663,6 @@ onMounted(async () => {
         >
           close
         </button>
-      </form>
-    </dialog>
-
-    <!-- Request Parts Modal -->
-    <dialog
-      class="modal"
-      :class="{
-        'modal-open': partsModalOpen,
-      }"
-    >
-      <div class="modal-box max-w-5xl">
-
-        <!-- Header -->
-        <div class="flex items-start justify-between gap-4">
-          <div>
-            <h3 class="text-lg font-bold">
-              Request Parts
-            </h3>
-
-            <p class="mt-1 text-sm text-gray-content/60">
-              Select multiple parts and submit them for store approval.
-            </p>
-          </div>
-
-          <button
-            type="button"
-            class="btn btn-ghost btn-sm btn-circle"
-            :disabled="partSaving"
-            @click="closePartModal"
-          >
-            <Icon
-              name="lucide:x"
-              class="size-4"
-            />
-          </button>
-        </div>
-
-        <!-- Error -->
-        <div
-          v-if="partsError"
-          class="alert alert-error mt-5"
-        >
-          <Icon
-            name="lucide:circle-alert"
-            class="size-5"
-          />
-
-          <span>
-            {{ partsError }}
-          </span>
-        </div>
-
-        <!-- Search -->
-        <div class="mt-5">
-          <label class="fieldset">
-            <legend class="fieldset-legend">
-              Search Parts
-            </legend>
-
-            <div class="relative">
-              <Icon
-                name="i-lucide:search"
-                class="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-gray-500"
-              />
-
-              <input
-                v-model="partSearch"
-                type="text"
-                class="input input-bordered w-full pl-9"
-                placeholder="Search part number, name or brand..."
-              />
-            </div>
-          </label>
-        </div>
-
-        <!-- Available Parts -->
-        <div class="mt-5">
-          <div class="mb-3 flex items-center justify-between">
-            <h4 class="font-semibold">
-              Available Parts
-            </h4>
-
-            <span class="text-xs text-gray-content/60">
-              {{ selectedPartRequests.length }} selected
-            </span>
-          </div>
-
-          <div
-            v-if="filteredAvailableParts.length === 0"
-            class="rounded-lg border border-base-300 p-6 text-center text-sm text-gray-content/60"
-          >
-            No parts found.
-          </div>
-
-          <div
-            v-else
-            class="max-h-64 overflow-y-auto rounded-lg border border-base-300"
-          >
-            <div
-              v-for="part in filteredAvailableParts"
-              :key="part.id"
-              class="flex items-center justify-between gap-3 border-b border-base-300 p-3 last:border-b-0"
-            >
-              <div class="min-w-0">
-                <p class="font-medium">
-                  {{ part.name }}
-                </p>
-
-                <p class="text-xs text-gray-content/60">
-                  {{ part.part_number }}
-
-                  <template v-if="part.brand">
-                    · {{ part.brand }}
-                  </template>
-                </p>
-
-                <p class="mt-1 text-xs text-gray-content/60">
-                  Stock: {{ part.current_stock }}
-                  {{ part.unit }}
-                  · Price: {{ formatCost(part.selling_price) }}
-                </p>
-              </div>
-
-              <button
-                type="button"
-                class="btn btn-sm"
-                :class="{
-                  'btn-success': isPartSelected(part.id),
-                  'btn-outline': !isPartSelected(part.id),
-                }"
-                :disabled="isPartSelected(part.id)"
-                @click="addPartToSelection(part)"
-              >
-                <Icon
-                  v-if="isPartSelected(part.id)"
-                  name="lucide:check"
-                  class="size-4"
-                />
-
-                <Icon
-                  v-else
-                  name="lucide:plus"
-                  class="size-4"
-                />
-
-                <span>
-                  {{ isPartSelected(part.id) ? 'Selected' : 'Add' }}
-                </span>
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <!-- Selected Parts -->
-        <div class="mt-6">
-          <div class="mb-3 flex items-center justify-between">
-            <h4 class="font-semibold">
-              Selected Parts
-            </h4>
-
-            <span class="text-sm font-semibold text-primary">
-              {{ formatCost(selectedPartsTotal) }}
-            </span>
-          </div>
-
-          <div
-            v-if="selectedPartRequests.length === 0"
-            class="rounded-lg border border-dashed border-base-300 p-6 text-center text-sm text-gray-content/60"
-          >
-            Select parts from the list above.
-          </div>
-
-          <div
-            v-else
-            class="space-y-4"
-          >
-            <div
-              v-for="selected in selectedPartRequests"
-              :key="selected.part_id"
-              class="rounded-xl border border-base-300 p-4"
-            >
-              <!-- Selected Part Header -->
-              <div class="flex items-start justify-between gap-3">
-                <div>
-                  <h5 class="font-semibold">
-                    {{ getSelectedPartDetails(selected.part_id)?.name }}
-                  </h5>
-
-                  <p class="text-xs text-gray-content/60">
-                    {{ getSelectedPartDetails(selected.part_id)?.part_number }}
-                  </p>
-                </div>
-
-                <button
-                  type="button"
-                  class="btn btn-ghost btn-sm btn-circle text-error"
-                  :disabled="partSaving"
-                  @click="removePartFromSelection(selected.part_id)"
-                >
-                  <Icon
-                    name="lucide:trash-2"
-                    class="size-4"
-                  />
-                </button>
-              </div>
-
-              <!-- Part Fields -->
-              <div class="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
-
-                <!-- Task -->
-                <fieldset class="fieldset md:col-span-2">
-                  <legend class="fieldset-legend">
-                    Related Task / Service
-                  </legend>
-
-                  <select
-                    :value="selected.job_card_task_id"
-                    class="select select-bordered w-full"
-                    @change="updateSelectedPart(
-                      selected.part_id,
-                      'job_card_task_id',
-                      ($event.target as HTMLSelectElement).value
-                    )"
-                  >
-                    <option value="">
-                      Not linked to a specific task
-                    </option>
-
-                    <option
-                      v-for="task in tasks"
-                      :key="task.id"
-                      :value="task.id"
-                    >
-                      {{ task.title }}
-                    </option>
-                  </select>
-                </fieldset>
-
-                <!-- Quantity -->
-                <fieldset class="fieldset">
-                  <legend class="fieldset-legend">
-                    Quantity
-                  </legend>
-
-                  <input
-                    :value="selected.quantity"
-                    type="number"
-                    min="0.01"
-                    step="0.01"
-                    class="input input-bordered w-full"
-                    @input="updateSelectedPart(
-                      selected.part_id,
-                      'quantity',
-                      ($event.target as HTMLInputElement).value
-                    )"
-                  />
-                </fieldset>
-
-                <!-- Unit Price -->
-                <fieldset class="fieldset">
-                  <legend class="fieldset-legend">
-                    Unit Price
-                  </legend>
-
-                  <input
-                    :value="selected.unit_price"
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    class="input input-bordered w-full"
-                    @input="updateSelectedPart(
-                      selected.part_id,
-                      'unit_price',
-                      ($event.target as HTMLInputElement).value
-                    )"
-                  />
-                </fieldset>
-
-                <!-- Discount -->
-                <fieldset class="fieldset">
-                  <legend class="fieldset-legend">
-                    Discount
-                  </legend>
-
-                  <input
-                    :value="selected.discount"
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    class="input input-bordered w-full"
-                    @input="updateSelectedPart(
-                      selected.part_id,
-                      'discount',
-                      ($event.target as HTMLInputElement).value
-                    )"
-                  />
-                </fieldset>
-
-                <!-- Total -->
-                <div class="rounded-lg border border-primary/20 bg-primary/5 p-4">
-                  <p class="text-xs text-gray-content/50">
-                    Total
-                  </p>
-
-                  <p class="mt-1 text-xl font-bold text-primary">
-                    {{ formatCost(getSelectedPartTotal(selected)) }}
-                  </p>
-                </div>
-
-                <!-- Notes -->
-                <fieldset class="fieldset md:col-span-2">
-                  <legend class="fieldset-legend">
-                    Notes
-                  </legend>
-
-                  <textarea
-                    :value="selected.notes"
-                    class="textarea textarea-bordered min-h-20 w-full"
-                    placeholder="Optional notes..."
-                    @input="updateSelectedPart(
-                      selected.part_id,
-                      'notes',
-                      ($event.target as HTMLTextAreaElement).value
-                    )"
-                  ></textarea>
-                </fieldset>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Summary -->
-        <div
-          v-if="selectedPartRequests.length > 0"
-          class="mt-5 flex items-center justify-between rounded-lg bg-base-200 p-4"
-        >
-          <div>
-            <p class="text-sm font-medium">
-              Total Parts
-            </p>
-
-            <p class="text-xs text-gray-content/60">
-              {{ selectedPartRequests.length }} part request(s)
-            </p>
-          </div>
-
-          <p class="text-xl font-bold text-primary">
-            {{ formatCost(selectedPartsTotal) }}
-          </p>
-        </div>
-
-        <!-- Actions -->
-        <div class="modal-action">
-          <button
-            type="button"
-            class="btn btn-ghost"
-            :disabled="partSaving"
-            @click="closePartModal"
-          >
-            Cancel
-          </button>
-
-          <button
-            type="button"
-            class="btn btn-primary"
-            :disabled="
-              partSaving ||
-              selectedPartRequests.length === 0
-            "
-            @click="savePart"
-          >
-            <span
-              v-if="partSaving"
-              class="loading loading-spinner loading-sm"
-            ></span>
-
-            <span v-else>
-              Submit Requests
-            </span>
-          </button>
-        </div>
-      </div>
-
-      <form
-        method="dialog"
-        class="modal-backdrop"
-        @click.prevent="closePartModal"
-      >
-        <button>close</button>
       </form>
     </dialog>
 
